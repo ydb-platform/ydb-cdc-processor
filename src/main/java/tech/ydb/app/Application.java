@@ -12,6 +12,8 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ApplicationContext;
 
+import tech.ydb.core.Status;
+
 /**
  *
  * @author Aleksandr Gorshenin
@@ -21,12 +23,15 @@ public class Application implements CommandLineRunner {
     private static final Logger logger = LoggerFactory.getLogger(Application.class);
 
     private final ApplicationContext ctx;
+    private final YdbService ydb;
 
     private final List<String> warnings = new ArrayList<>();
     private final List<CdcReader> readers = new ArrayList<>();
 
-    public Application(ApplicationContext ctx) {
+    public Application(ApplicationContext ctx, YdbService ydb) {
         this.ctx = ctx;
+        this.ydb = ydb;
+        this.warnings.add("Application is not started yet");
     }
 
     public List<String> getWarnings() {
@@ -40,6 +45,10 @@ public class Application implements CommandLineRunner {
     @Override
     public void run(String... args) {
         for (String arg : args) {
+            if (arg.startsWith("--")) {
+                continue;
+            }
+
             logger.info("read config file {}", arg);
             File config = new File(arg);
             if (!config.exists() || !config.canRead()) {
@@ -61,6 +70,12 @@ public class Application implements CommandLineRunner {
             warnings.add("No reader configs found!!");
         }
 
+        Status status = ydb.validate();
+        if (!status.isSuccess()) {
+            warnings.add("Can't connect to DB: " + status);
+        }
+
+        this.warnings.remove(0);
         logger.info("app has started");
     }
 
