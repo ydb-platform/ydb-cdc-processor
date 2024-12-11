@@ -12,6 +12,8 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ApplicationContext;
 
+import tech.ydb.core.Result;
+
 /**
  *
  * @author Aleksandr Gorshenin
@@ -54,7 +56,13 @@ public class Application implements CommandLineRunner {
                 try {
                     XmlConfig xml = JAXB.unmarshal(config, XmlConfig.class);
                     for (XmlConfig.Cdc cdc: xml.getCdcs()) {
-                        readers.add(new CdcReader(ydb, cdc.getConsumer(), cdc.getChanefeed(), cdc.getQuery()));
+                        Result<YqlWriter> writer = YqlWriter.parse(ydb, cdc.getConsumer(), cdc.getQuery());
+                        if (!writer.isSuccess()) {
+                            warnings.add("can't create reader " + cdc.getConsumer()
+                                    + ", query problem: " + writer.getStatus());
+                        } else {
+                            readers.add(new CdcReader(ydb, writer.getValue(), cdc.getConsumer(), cdc.getChangefeed()));
+                        }
                     }
                 } catch (RuntimeException ex) {
                     logger.warn("can't parse file {}", arg, ex);

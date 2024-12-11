@@ -32,7 +32,7 @@ public class XmlConfig {
         @XmlValue
         private String query;
 
-        public String getChanefeed() {
+        public String getChangefeed() {
             return this.changefeed;
         }
 

@@ -63,17 +63,22 @@ public class WebController {
         public final String id;
         public final boolean ok;
         public final String status;
-        public final Long updated;
-        public final Long processed;
+        public final Long readed;
+        public final Long writed;
 
         public ReaderStatus(CdcReader reader) {
             this.id = reader.getId();
-            Status last = reader.getLastStatus();
-            this.ok = last.isSuccess();
-            this.status = last.toString();
-            this.updated = reader.getLastUpdate().toEpochMilli();
-            Instant vtm = reader.getLastVirtualTimestamp();
-            this.processed = vtm != null ? vtm.toEpochMilli() : null;
+
+            YqlWriter writer = reader.getWriter();
+            Status lastStatus = writer.getLastStatus();
+            Instant lastReaded = writer.getLastReaded();
+            Instant lastWrited = writer.getLastWrited();
+
+            this.ok = lastStatus.isSuccess();
+            this.status = lastStatus.toString();
+
+            this.readed = lastReaded != null ? lastReaded.toEpochMilli() : null;
+            this.writed = lastWrited != null ? lastWrited.toEpochMilli() : null;
         }
     }
 }

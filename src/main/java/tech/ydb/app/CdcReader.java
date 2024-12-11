@@ -1,47 +1,43 @@
 package tech.ydb.app;
 
-import java.time.Instant;
 import java.util.UUID;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import tech.ydb.core.Result;
-import tech.ydb.core.Status;
-import tech.ydb.table.query.DataQuery;
+import tech.ydb.topic.read.AsyncReader;
+import tech.ydb.topic.settings.ReaderSettings;
+import tech.ydb.topic.settings.TopicReadSettings;
 
 /**
  *
  * @author Aleksandr Gorshenin
  */
-public class CdcReader {
-    private static final Logger logger = LoggerFactory.getLogger(CdcReader.class);
-
+public class CdcReader implements AutoCloseable {
     private final String id;
     private final String consumer;
     private final String changefeed;
 
-    private final String queryYql;
+    private final AsyncReader reader;
+    private final YqlWriter writer;
 
-    private volatile Status lastStatus;
-    private volatile Instant lastUpdate;
-    private volatile Instant lastVirtulaTimestamp;
-
-    public CdcReader(YdbService ydb, String consumer, String changefeed, String queryYql) {
+    public CdcReader(YdbService ydb, YqlWriter writer, String consumer, String changefeed) {
         this.id = UUID.randomUUID().toString();
-
         this.consumer = consumer;
         this.changefeed = changefeed;
-        this.queryYql = queryYql;
+        this.writer = writer;
 
-        Result<DataQuery> parsed = ydb.parseQuery(queryYql);
-        if (!parsed.isSuccess()) {
-            logger.error("Can't parse query for consumer {}, got status {}", consumer, parsed.getStatus());
-        }
+        ReaderSettings rs = ReaderSettings.newBuilder()
+                .setConsumerName(consumer)
+                .setMaxMemoryUsageBytes(40 * 1024 * 1024) // 40 Mb
+                .addTopic(TopicReadSettings.newBuilder().setPath(changefeed).build())
+                .build();
 
-        this.lastUpdate = Instant.now();
-        this.lastStatus = parsed.getStatus();
-        this.lastVirtulaTimestamp = null;
+        this.reader = ydb.createReader(rs, writer.toHanlderSettings());
+        this.reader.init();
+    }
+
+    @Override
+    public void close() {
+        writer.close();
+        reader.shutdown();
     }
 
     public String getId() {
@@ -56,15 +52,7 @@ public class CdcReader {
         return this.changefeed;
     }
 
-    public Status getLastStatus() {
-        return lastStatus;
-    }
-
-    public Instant getLastUpdate() {
-        return lastUpdate;
-    }
-
-    public Instant getLastVirtualTimestamp() {
-        return lastVirtulaTimestamp;
+    public YqlWriter getWriter() {
+        return writer;
     }
 }

@@ -27,6 +27,9 @@ import tech.ydb.table.SessionRetryContext;
 import tech.ydb.table.TableClient;
 import tech.ydb.table.query.DataQuery;
 import tech.ydb.topic.TopicClient;
+import tech.ydb.topic.read.AsyncReader;
+import tech.ydb.topic.settings.ReadEventHandlersSettings;
+import tech.ydb.topic.settings.ReaderSettings;
 
 /**
  *
@@ -99,6 +102,10 @@ public class YdbService {
         try (Session s = session.getValue()) {
             return s.prepareDataQuery(query).join();
         }
+    }
+
+    public AsyncReader createReader(ReaderSettings rs, ReadEventHandlersSettings settings) {
+        return topicClient.createAsyncReader(rs, settings);
     }
 
     private static Map<String, String> parseOptions(String url) {

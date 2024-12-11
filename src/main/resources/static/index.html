@@ -21,10 +21,12 @@
             }
 
             for (const r of json) {
-                if (r.processed) {
-                    $("#" + r.id + " td.vtm").html(printUnixtime(r.processed));
+                if (r.readed) {
+                    $("#" + r.id + " td.readed").html(printUnixtime(r.readed));
                 }
-                $("#" + r.id + " td.update").html(printUnixtime(r.updated));
+                if (r.writed) {
+                    $("#" + r.id + " td.writed").html(printUnixtime(r.writed));
+                }
 
                 const s = $("#" + r.id + " td.status");
                 if (r.ok) {
@@ -33,6 +35,8 @@
                     s.addClass("error").html(r.status);
                 }
             }
+
+            setTimeout(updateStatus, 1000);
         });
     }
 
@@ -54,8 +58,8 @@
                     $("#status").append("<tr id='" + r.id + "'>"
                             + "<td>" + r.changefeed + "</td>"
                             + "<td>" + r.consumer + "</td>"
-                            + "<td class='vtm'></td>"
-                            + "<td class='update'></td>"
+                            + "<td class='readed'></td>"
+                            + "<td class='writed'></td>"
                             + "<td class='status'></td>"
                             + "</tr>");
                 }
@@ -94,8 +98,8 @@
                 <tr>
                     <td>Changefeed name</td>
                     <td>Consumer name</td>
-                    <td>Last virtual timestamp</td>
-                    <td>Last update timestamp</td>
+                    <td>Last readed timestamp</td>
+                    <td>Last writed timestamp</td>
                     <td>Status</td>
                 </tr>
             </thead>
