@@ -1,0 +1,110 @@
+<!doctype html>
+<html>
+  <head>
+    <title>YDB CDC Processor</title>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+
+    <style>
+        html {
+            font-family: 'Arial';
+            font-size: 120%;
+            padding: 1em;
+        }
+
+        #header {
+            text-align: center;
+        }
+
+        #control {
+            float: right;
+        }
+
+        #warnings {
+            font-size: 150%;
+            color: red;
+        }
+
+        table {
+            table-layout: auto;
+            width: 100%;
+        }
+
+        table, tr, td {
+            border-collapse: collapse;
+            border: 1px solid;
+        }
+
+        td {
+            min-width: 15%;
+        }
+
+        td.status {
+            width: 100%;
+        }
+    </style>
+
+    <script>
+    $(document).ready(function() {
+        $("#stop").click(function() {
+            $.post("stop", { });
+        });
+        $("#update").click(function() {
+            $.get("status");
+        });
+
+        $.get("config", function (json) {
+            if (!json) {
+                $("#warnings").append("<p>INVALID SERVER RESPONSE " + data + "</p>");
+                return;
+            }
+
+            if (json.warnings) {
+                for (const w of json.warnings) {
+                    $("#warnings").append("<p>" + w + "</p>");
+                }
+            }
+
+            if (json.readers) {
+                for (const r of json.readers) {
+                    $("#status").append("<tr id='" + r.id + "'>"
+                            + "<td>" + r.changefeed + "</td>"
+                            + "<td>" + r.consumer + "</td>"
+                            + "<td>" + "last update" + "</td>"
+                            + "<td>" + "last virtual tm" + "</td>"
+                            + "<td class='status'>" + "last status" + "</td>"
+                            + "</tr>");
+                }
+            }
+        });
+    });
+    </script>
+  </head>
+
+  <body>
+    <div>
+        <h2 id="header">YDB CDC transfer status</h2>
+
+        <div id="control">
+            <button id="update">UPDATE</button>
+            <button id="stop">STOP APPLICATION</button>
+        </div>
+        <div id="warnings">
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <td>Changefeed name</td>
+                    <td>Consumer name</td>
+                    <td>Last virtual timestamp</td>
+                    <td>Last update timestamp</td>
+                    <td>Status</td>
+                </tr>
+            </thead>
+            <tbody id="status">
+
+            </tbody>
+        </table>
+    </div>
+  </body>
+</html>
