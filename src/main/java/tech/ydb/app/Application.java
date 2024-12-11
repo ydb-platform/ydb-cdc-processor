@@ -12,8 +12,6 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ApplicationContext;
 
-import tech.ydb.core.Status;
-
 /**
  *
  * @author Aleksandr Gorshenin
@@ -31,7 +29,6 @@ public class Application implements CommandLineRunner {
     public Application(ApplicationContext ctx, YdbService ydb) {
         this.ctx = ctx;
         this.ydb = ydb;
-        this.warnings.add("Application is not started yet");
     }
 
     public List<String> getWarnings() {
@@ -57,7 +54,7 @@ public class Application implements CommandLineRunner {
                 try {
                     XmlConfig xml = JAXB.unmarshal(config, XmlConfig.class);
                     for (XmlConfig.Cdc cdc: xml.getCdcs()) {
-                        readers.add(new CdcReader(cdc.getConsumer(), cdc.getChanefeed(), cdc.getQuery()));
+                        readers.add(new CdcReader(ydb, cdc.getConsumer(), cdc.getChanefeed(), cdc.getQuery()));
                     }
                 } catch (RuntimeException ex) {
                     logger.warn("can't parse file {}", arg, ex);
@@ -70,12 +67,6 @@ public class Application implements CommandLineRunner {
             warnings.add("No reader configs found!!");
         }
 
-        Status status = ydb.validate();
-        if (!status.isSuccess()) {
-            warnings.add("Can't connect to DB: " + status);
-        }
-
-        this.warnings.remove(0);
         logger.info("app has started");
     }
 

@@ -19,14 +19,13 @@ import org.springframework.stereotype.Service;
 import tech.ydb.auth.TokenAuthProvider;
 import tech.ydb.auth.iam.CloudAuthHelper;
 import tech.ydb.core.Result;
-import tech.ydb.core.Status;
 import tech.ydb.core.auth.StaticCredentials;
 import tech.ydb.core.grpc.GrpcTransport;
 import tech.ydb.core.grpc.GrpcTransportBuilder;
 import tech.ydb.table.Session;
 import tech.ydb.table.SessionRetryContext;
 import tech.ydb.table.TableClient;
-import tech.ydb.table.transaction.TxControl;
+import tech.ydb.table.query.DataQuery;
 import tech.ydb.topic.TopicClient;
 
 /**
@@ -91,14 +90,15 @@ public class YdbService {
         this.transport.close();
     }
 
-    public Status validate() {
+    public Result<DataQuery> parseQuery(String query) {
         Result<Session> session = tableClient.createSession(Duration.ofSeconds(5)).join();
-        if (session.isSuccess()) {
-            try (Session s = session.getValue()) {
-                return s.executeDataQuery("SELECT 1;", TxControl.serializableRw()).join().getStatus();
-            }
+        if (!session.isSuccess()) {
+            return session.map(null);
         }
-        return session.getStatus();
+
+        try (Session s = session.getValue()) {
+            return s.prepareDataQuery(query).join();
+        }
     }
 
     private static Map<String, String> parseOptions(String url) {

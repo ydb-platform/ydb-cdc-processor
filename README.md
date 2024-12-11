@@ -84,20 +84,26 @@ DECLARE $rows AS List<Struct<
     product_id: Uint32,
     category_id: Uint64,
     category_code: Text?,
-    brand: Text?,
-    price: Double,
     user_id: Uint32,
     user_session: Text
 >>;
-UPSERT INTO mat_view1 SELECT * FROM AS_TABLE($rows);
+
+$parse=DateTime::Parse('%Y-%m-%d %H:%M:%S %Z');
+
+UPSERT INTO mat_view1 SELECT
+    Unwrap(DateTime::MakeTimestamp($parse(event_time))) AS event_time,
+    event_type,
+    product_id,
+    user_id,
+    category_id,
+    user_session
+FROM AS_TABLE($rows);
 ]]>
     </cdc>
     <cdc changefeed="table_source/cdc_topic" consumer="v2_consumer">
 <![CDATA[
 DECLARE $rows AS List<Struct<
-    event_time: Text,
     event_type: Text,
-    product_id: Uint32,
     category_id: Uint64,
     category_code: Text?,
     brand: Text?,
@@ -105,7 +111,7 @@ DECLARE $rows AS List<Struct<
     user_id: Uint32,
     user_session: Text
 >>;
-UPSERT INTO mat_view1 SELECT * FROM AS_TABLE($rows);
+UPSERT INTO mat_view2 SELECT * FROM AS_TABLE($rows);
 ]]>
     </cdc>
 </config>

@@ -1,61 +1,45 @@
 <!doctype html>
 <html>
   <head>
+    <link rel="stylesheet" href="style.css" type="text/css">
+
     <title>YDB CDC Processor</title>
+
 
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
 
-    <style>
-        html {
-            font-family: 'Arial';
-            font-size: 120%;
-            padding: 1em;
-        }
-
-        #header {
-            text-align: center;
-        }
-
-        #control {
-            float: right;
-        }
-
-        #warnings {
-            font-size: 150%;
-            color: red;
-        }
-
-        table {
-            table-layout: auto;
-            width: 100%;
-        }
-
-        table, tr, td {
-            border-collapse: collapse;
-            border: 1px solid;
-        }
-
-        td {
-            min-width: 15%;
-        }
-
-        td.status {
-            width: 100%;
-        }
-    </style>
-
     <script>
-    $(document).ready(function() {
-        $("#stop").click(function() {
-            $.post("stop", { });
-        });
-        $("#update").click(function() {
-            $.get("status");
-        });
+    function printUnixtime(unixtime) {
+        return new Date(unixtime).toLocaleString();
+    }
 
+    function updateStatus() {
+        $.get("status", function (json) {
+            if (!json) {
+                $("#warnings").append("<p>INVALID SERVER RESPONSE " + json + "</p>");
+                return;
+            }
+
+            for (const r of json) {
+                if (r.processed) {
+                    $("#" + r.id + " td.vtm").html(printUnixtime(r.processed));
+                }
+                $("#" + r.id + " td.update").html(printUnixtime(r.updated));
+
+                const s = $("#" + r.id + " td.status");
+                if (r.ok) {
+                    $("#" + r.id + " td.status").removeClass("error").html("OK");
+                } else {
+                    s.addClass("error").html(r.status);
+                }
+            }
+        });
+    }
+
+    function loadConfig() {
         $.get("config", function (json) {
             if (!json) {
-                $("#warnings").append("<p>INVALID SERVER RESPONSE " + data + "</p>");
+                $("#warnings").append("<p>INVALID SERVER RESPONSE " + json + "</p>");
                 return;
             }
 
@@ -70,13 +54,27 @@
                     $("#status").append("<tr id='" + r.id + "'>"
                             + "<td>" + r.changefeed + "</td>"
                             + "<td>" + r.consumer + "</td>"
-                            + "<td>" + "last update" + "</td>"
-                            + "<td>" + "last virtual tm" + "</td>"
-                            + "<td class='status'>" + "last status" + "</td>"
+                            + "<td class='vtm'></td>"
+                            + "<td class='update'></td>"
+                            + "<td class='status'></td>"
                             + "</tr>");
                 }
             }
+
+            updateStatus();
         });
+    }
+
+    $(document).ready(function() {
+        $("#stop").click(function() {
+            $.post("stop", { });
+        });
+        $("#update").click(update);
+        loadConfig();
+
+        if (window && window.location.hostname === 'localhost') {
+            $(".debug").removeClass("debug");
+        }
     });
     </script>
   </head>
@@ -86,8 +84,8 @@
         <h2 id="header">YDB CDC transfer status</h2>
 
         <div id="control">
+            <button id="stop" class="debug">STOP APPLICATION</button>
             <button id="update">UPDATE</button>
-            <button id="stop">STOP APPLICATION</button>
         </div>
         <div id="warnings">
         </div>

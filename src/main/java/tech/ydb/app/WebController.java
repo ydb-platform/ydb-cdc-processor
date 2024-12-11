@@ -1,11 +1,14 @@
 package tech.ydb.app;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.stream.Collectors;
 
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
+
+import tech.ydb.core.Status;
 
 /**
  *
@@ -26,36 +29,51 @@ public class WebController {
 
     @RequestMapping(path = "/config")
     public Config config() {
-        return new Config();
+        return new Config(app);
     }
 
-    public class Config {
-        public List<String> getWarnings() {
-            return app.getWarnings();
-        }
+    @RequestMapping(path = "/status")
+    public List<ReaderStatus> status() {
+        return app.getReaders().stream().map(ReaderStatus::new).collect(Collectors.toList());
+    }
 
-        public List<ReaderInfo> getReaders() {
-            return app.getReaders().stream().map(ReaderInfo::new).collect(Collectors.toList());
+    public static class Config {
+        public final List<String> warnings;
+        public final List<ReaderInfo> readers;
+
+        public Config(Application app) {
+            this.warnings = app.getWarnings();
+            this.readers = app.getReaders().stream().map(ReaderInfo::new).collect(Collectors.toList());
         }
     }
 
-    public class ReaderInfo {
-        private final CdcReader reader;
+    public static class ReaderInfo {
+        public final String id;
+        public final String changefeed;
+        public final String consumer;
 
         public ReaderInfo(CdcReader reader) {
-            this.reader = reader;
+            this.id = reader.getId();
+            this.changefeed = reader.getChangefeed();
+            this.consumer = reader.getConsumer();
         }
+    }
 
-        public String getId() {
-            return reader.getId();
-        }
+    public static class ReaderStatus {
+        public final String id;
+        public final boolean ok;
+        public final String status;
+        public final Long updated;
+        public final Long processed;
 
-        public String getChangefeed() {
-            return reader.getChangefeed();
-        }
-
-        public String getConsumer() {
-            return reader.getConsumer();
+        public ReaderStatus(CdcReader reader) {
+            this.id = reader.getId();
+            Status last = reader.getLastStatus();
+            this.ok = last.isSuccess();
+            this.status = last.toString();
+            this.updated = reader.getLastUpdate().toEpochMilli();
+            Instant vtm = reader.getLastVirtualTimestamp();
+            this.processed = vtm != null ? vtm.toEpochMilli() : null;
         }
     }
 }

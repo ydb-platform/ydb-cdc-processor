@@ -1,0 +1,46 @@
+html {
+    font-family: 'Arial';
+    font-size: 120%;
+    padding: 1em;
+}
+
+#header {
+    text-align: center;
+}
+
+#control {
+    float: right;
+}
+
+#warnings {
+    font-size: 150%;
+    color: red;
+}
+
+table {
+    table-layout: auto;
+    width: 100%;
+}
+
+table, tr, td {
+    border-collapse: collapse;
+    border: 1px solid;
+}
+
+td {
+    min-width: 15%;
+}
+
+td.status {
+    width: 100%;
+    color: green;
+}
+
+td.status.error {
+    color: red;
+}
+
+
+.debug {
+    display: none;
+}
