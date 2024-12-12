@@ -25,6 +25,7 @@ import tech.ydb.core.grpc.GrpcTransport;
 import tech.ydb.core.grpc.GrpcTransportBuilder;
 import tech.ydb.table.Session;
 import tech.ydb.table.TableClient;
+import tech.ydb.table.description.TableDescription;
 import tech.ydb.table.query.DataQuery;
 import tech.ydb.table.query.Params;
 import tech.ydb.table.transaction.TxControl;
@@ -92,6 +93,23 @@ public class YdbService {
         this.transport.close();
     }
 
+    public String expandPath(String name) {
+        if (name == null || name.isEmpty() || name.startsWith("/")) {
+            return name;
+        }
+        StringBuilder sb = new StringBuilder();
+        String database = transport.getDatabase();
+        if (!database.startsWith("/")) {
+            sb.append("/");
+        }
+        sb.append(database);
+        if (!database.endsWith("/")) {
+            sb.append("/");
+        }
+        sb.append(name);
+        return sb.toString();
+    }
+
     public Result<DataQuery> parseQuery(String query) {
         Result<Session> session = tableClient.createSession(Duration.ofSeconds(5)).join();
         if (!session.isSuccess()) {
@@ -100,6 +118,17 @@ public class YdbService {
 
         try (Session s = session.getValue()) {
             return s.prepareDataQuery(query).join();
+        }
+    }
+
+    public Result<TableDescription> describeTable(String tablePath) {
+        Result<Session> session = tableClient.createSession(Duration.ofSeconds(5)).join();
+        if (!session.isSuccess()) {
+            return session.map(null);
+        }
+
+        try (Session s = session.getValue()) {
+            return s.describeTable(tablePath).join();
         }
     }
 

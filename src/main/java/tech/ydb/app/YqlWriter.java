@@ -1,8 +1,8 @@
 package tech.ydb.app;
 
+import java.io.IOException;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -14,13 +14,13 @@ import tech.ydb.core.Issue;
 import tech.ydb.core.Result;
 import tech.ydb.core.Status;
 import tech.ydb.core.StatusCode;
+import tech.ydb.table.description.TableColumn;
+import tech.ydb.table.description.TableDescription;
 import tech.ydb.table.query.DataQuery;
 import tech.ydb.table.query.Params;
 import tech.ydb.table.values.ListType;
-import tech.ydb.table.values.PrimitiveValue;
 import tech.ydb.table.values.StructType;
 import tech.ydb.table.values.Type;
-import tech.ydb.table.values.Value;
 import tech.ydb.topic.read.DeferredCommitter;
 import tech.ydb.topic.read.Message;
 import tech.ydb.topic.read.events.AbstractReadEventHandler;
@@ -32,13 +32,11 @@ import tech.ydb.topic.settings.ReadEventHandlersSettings;
  * @author Aleksandr Gorshenin
  */
 public class YqlWriter implements AutoCloseable {
-    private static final int WRITE_BATCH_SIZE = 50;
     private static final Logger logger = LoggerFactory.getLogger(YqlWriter.class);
 
     private final YdbService ydb;
+    private final CdcMsgParser parser;
     private final String queryYql;
-    private final String paramName;
-    private final StructType paramType;
 
     private final ConcurrentLinkedQueue<Message> queue = new ConcurrentLinkedQueue<>();
     private final Thread worker;
@@ -47,11 +45,10 @@ public class YqlWriter implements AutoCloseable {
     private volatile Instant lastReaded;
     private volatile Instant lastWrited;
 
-    private YqlWriter(YdbService ydb, String consumer, String queryYql, String paramName, StructType paramType) {
+    private YqlWriter(YdbService ydb, CdcMsgParser parser, String consumer, String queryYql) {
         this.ydb = ydb;
         this.queryYql = queryYql;
-        this.paramName = paramName;
-        this.paramType = paramType;
+        this.parser = parser;
         this.lastStatus = Status.SUCCESS;
         this.lastWrited = null;
         this.lastReaded = null;
@@ -101,11 +98,6 @@ public class YqlWriter implements AutoCloseable {
     }
 
     private class WriterRunnable implements Runnable {
-
-        public Value<?> parseMsg(byte[] json) {
-            return PrimitiveValue.newText(String.valueOf(json));
-        }
-
         @Override
         @SuppressWarnings("SleepWhileInLoop")
         public void run() {
@@ -114,7 +106,13 @@ public class YqlWriter implements AutoCloseable {
                 long lastPrinted = System.currentTimeMillis();
                 long written = 0;
 
-                while (true) {
+                while (!Thread.interrupted()) {
+                    Message msg = queue.poll();
+                    if (msg == null) {
+                        Thread.sleep(1000);
+                        continue;
+                    }
+
                     long now = System.currentTimeMillis();
                     if (now - lastPrinted > 1000) {
                         long ms = now - lastPrinted;
@@ -124,53 +122,65 @@ public class YqlWriter implements AutoCloseable {
                         lastPrinted = now;
                     }
 
-                    Message msg = queue.poll();
-                    if (msg == null) {
-                        Thread.sleep(1000);
-                        continue;
-                    }
-
                     DeferredCommitter committer = DeferredCommitter.newInstance();
-                    List<Value<?>> values = new ArrayList<>();
                     Instant last = msg.getCreatedAt();
 
-                    while (msg != null && values.size() < WRITE_BATCH_SIZE) {
-                        values.add(PrimitiveValue.newText(String.valueOf(msg.getData())));
+                    while (msg != null && !parser.isFull()) {
+                        parser.addMessage(msg.getData());
                         committer.add(msg);
-
                         msg = queue.poll();
                     }
 
-                    Params prm = Params.of(paramName, ListType.of(paramType).newValue(values));
-                    lastStatus = ydb.executeQuery(queryYql, prm);
-                    if (Thread.interrupted()) {
-                        return;
+                    if (parser.isEmpty()) {
+                        committer.commit();
+                        continue;
                     }
+
+                    written += parser.batchSize();
+                    Params prm = parser.build();
+                    lastStatus = ydb.executeQuery(queryYql, prm);
 
                     int retry = 0;
                     while (!lastStatus.isSuccess()) {
                         retry++;
-                        long delay = 25 << Math.max(retry, 8);
+                        long delay = 25 << Math.min(retry, 8);
                         delay = delay + rnd.nextLong(delay);
-                        logger.debug("got error {}, retry #{} in {} ms", lastStatus, retry, delay);
+                        logger.debug("got error {}", lastStatus);
+                        logger.debug("retry #{} in {} ms", retry, delay);
                         Thread.sleep(delay);
                         lastStatus = ydb.executeQuery(queryYql, prm);
-                        if (Thread.interrupted()) {
-                            return;
-                        }
                     }
 
+                    parser.clear();
                     committer.commit();
                     lastWrited = last;
                 }
-            } catch (InterruptedException e) {
+            } catch (IOException ex) {
+                logger.error("writer has stopped by exception", ex);
+                lastStatus = Status.of(StatusCode.CLIENT_INTERNAL_ERROR, ex,
+                        Issue.of(ex.getMessage(), Issue.Severity.ERROR));
+            } catch (InterruptedException ex) {
                 // stoppping
             }
         }
 
     }
 
-    public static Result<YqlWriter> parse(YdbService ydb, String consumer, String queryYql) {
+    public static Result<YqlWriter> parse(YdbService ydb, String changefeed, String consumer, String queryYql) {
+        int index = changefeed.lastIndexOf("/");
+        if (index <= 0) {
+            return Result.fail(Status.of(StatusCode.CLIENT_INTERNAL_ERROR, Issue.of(
+                    "Changefeed name have to contain table name with  / " + changefeed, Issue.Severity.ERROR
+            )));
+        }
+
+        Result<TableDescription> descRes = ydb.describeTable(changefeed.substring(0, index));
+        if (!descRes.isSuccess()) {
+            logger.error("Can't describe table for changefeed {}, got status {}", changefeed, descRes.getStatus());
+            return descRes.map(null);
+        }
+        TableDescription description = descRes.getValue();
+
         Result<DataQuery> parsed = ydb.parseQuery(queryYql);
         if (!parsed.isSuccess()) {
             logger.error("Can't parse query for consumer {}, got status {}", consumer, parsed.getStatus());
@@ -192,13 +202,38 @@ public class YqlWriter implements AutoCloseable {
             )));
         }
 
-        Type innerType = ((ListType) listType).getItemType();
-        if (innerType.getKind() != Type.Kind.STRUCT) {
+        Type itemType = ((ListType) listType).getItemType();
+        if (itemType.getKind() != Type.Kind.STRUCT) {
             return Result.fail(Status.of(StatusCode.CLIENT_INTERNAL_ERROR, Issue.of(
                     "Expected type List<Struct<...>>, but got " + listType, Issue.Severity.ERROR
             )));
         }
 
-        return Result.success(new YqlWriter(ydb, consumer, queryYql, paramName, (StructType) innerType));
+        descRes.getValue();
+        StructType structType = (StructType) itemType;
+        Map<String, Type> tableTypes = new HashMap<>();
+        for (TableColumn column: description.getColumns()) {
+            tableTypes.put(column.getName(), column.getType());
+        }
+
+        for (int idx = 0; idx < structType.getMembersCount(); idx += 1) {
+            String name = structType.getMemberName(idx);
+            Type type = structType.getMemberType(idx);
+            if (!tableTypes.containsKey(name)) {
+                return Result.fail(Status.of(StatusCode.CLIENT_INTERNAL_ERROR, Issue.of(
+                        "Source table doesn't have column " + name, Issue.Severity.ERROR
+                )));
+            }
+
+            if (!type.equals(tableTypes.get(name))) {
+                return Result.fail(Status.of(StatusCode.CLIENT_INTERNAL_ERROR, Issue.of(
+                        "Source table column " + name + " has type " + tableTypes.get(name) + " instead of " + type,
+                        Issue.Severity.ERROR
+                )));
+            }
+        }
+
+        CdcMsgParser parser = new CdcMsgParser(paramName, structType, description);
+        return Result.success(new YqlWriter(ydb, parser, consumer, queryYql));
     }
 }

@@ -57,12 +57,15 @@ public class Application implements CommandLineRunner {
                 try {
                     XmlConfig xml = JAXB.unmarshal(config, XmlConfig.class);
                     for (XmlConfig.Cdc cdc: xml.getCdcs()) {
-                        Result<YqlWriter> writer = YqlWriter.parse(ydb, cdc.getConsumer(), cdc.getQuery());
+                        String changefeed = ydb.expandPath(cdc.getChangefeed());
+                        Result<YqlWriter> writer = YqlWriter.parse(ydb, changefeed, cdc.getConsumer(), cdc.getQuery());
                         if (!writer.isSuccess()) {
+                            logger.error("can't create reader {} with problem {}",
+                                    cdc.getConsumer(), writer.getStatus());
                             warnings.add("can't create reader " + cdc.getConsumer()
-                                    + ", query problem: " + writer.getStatus());
+                                    + " with problem: " + writer.getStatus());
                         } else {
-                            readers.add(new CdcReader(ydb, writer.getValue(), cdc.getConsumer(), cdc.getChangefeed()));
+                            readers.add(new CdcReader(ydb, writer.getValue(), cdc.getConsumer(), changefeed));
                         }
                     }
                 } catch (RuntimeException ex) {
