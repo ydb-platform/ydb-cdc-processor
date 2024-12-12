@@ -4,6 +4,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
+import jakarta.annotation.PreDestroy;
 import jakarta.xml.bind.JAXB;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -75,7 +76,19 @@ public class Application implements CommandLineRunner {
             warnings.add("No reader configs found!!");
         }
 
+        for (CdcReader reader: readers) {
+            reader.start();
+        }
+
         logger.info("app has started");
+    }
+
+    @PreDestroy
+    public void preDestroy() {
+        logger.info("app has closed");
+        for (CdcReader reader: readers) {
+            reader.close();
+        }
     }
 
     public void stop() {

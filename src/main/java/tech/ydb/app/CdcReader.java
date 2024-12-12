@@ -31,7 +31,11 @@ public class CdcReader implements AutoCloseable {
                 .build();
 
         this.reader = ydb.createReader(rs, writer.toHanlderSettings());
+    }
+
+    public void start() {
         this.reader.init();
+        this.writer.start();
     }
 
     @Override

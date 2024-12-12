@@ -19,13 +19,15 @@ import org.springframework.stereotype.Service;
 import tech.ydb.auth.TokenAuthProvider;
 import tech.ydb.auth.iam.CloudAuthHelper;
 import tech.ydb.core.Result;
+import tech.ydb.core.Status;
 import tech.ydb.core.auth.StaticCredentials;
 import tech.ydb.core.grpc.GrpcTransport;
 import tech.ydb.core.grpc.GrpcTransportBuilder;
 import tech.ydb.table.Session;
-import tech.ydb.table.SessionRetryContext;
 import tech.ydb.table.TableClient;
 import tech.ydb.table.query.DataQuery;
+import tech.ydb.table.query.Params;
+import tech.ydb.table.transaction.TxControl;
 import tech.ydb.topic.TopicClient;
 import tech.ydb.topic.read.AsyncReader;
 import tech.ydb.topic.settings.ReadEventHandlersSettings;
@@ -50,8 +52,6 @@ public class YdbService {
 
     private final TableClient tableClient;
     private final TopicClient topicClient;
-
-    private final SessionRetryContext retryCtx;
 
     public YdbService(Environment env) {
         String url = env.getProperty(PREFIX + PARAM_URL, "grpc://localhost:2136/local");
@@ -83,7 +83,6 @@ public class YdbService {
         this.transport = builder.build();
         this.tableClient = TableClient.newClient(transport).build();
         this.topicClient = TopicClient.newClient(transport).build();
-        this.retryCtx = SessionRetryContext.create(tableClient).build();
     }
 
     @PreDestroy
@@ -101,6 +100,17 @@ public class YdbService {
 
         try (Session s = session.getValue()) {
             return s.prepareDataQuery(query).join();
+        }
+    }
+
+    public Status executeQuery(String query, Params params) {
+        Result<Session> session = tableClient.createSession(Duration.ofSeconds(5)).join();
+        if (!session.isSuccess()) {
+            return session.getStatus();
+        }
+
+        try (Session s = session.getValue()) {
+            return s.executeDataQuery(query, TxControl.serializableRw(), params).join().getStatus();
         }
     }
 

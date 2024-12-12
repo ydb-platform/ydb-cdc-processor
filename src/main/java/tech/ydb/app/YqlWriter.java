@@ -1,7 +1,10 @@
 package tech.ydb.app;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import org.slf4j.Logger;
@@ -12,9 +15,13 @@ import tech.ydb.core.Result;
 import tech.ydb.core.Status;
 import tech.ydb.core.StatusCode;
 import tech.ydb.table.query.DataQuery;
+import tech.ydb.table.query.Params;
 import tech.ydb.table.values.ListType;
+import tech.ydb.table.values.PrimitiveValue;
 import tech.ydb.table.values.StructType;
 import tech.ydb.table.values.Type;
+import tech.ydb.table.values.Value;
+import tech.ydb.topic.read.DeferredCommitter;
 import tech.ydb.topic.read.Message;
 import tech.ydb.topic.read.events.AbstractReadEventHandler;
 import tech.ydb.topic.read.events.DataReceivedEvent;
@@ -25,25 +32,30 @@ import tech.ydb.topic.settings.ReadEventHandlersSettings;
  * @author Aleksandr Gorshenin
  */
 public class YqlWriter implements AutoCloseable {
+    private static final int WRITE_BATCH_SIZE = 50;
     private static final Logger logger = LoggerFactory.getLogger(YqlWriter.class);
 
+    private final YdbService ydb;
     private final String queryYql;
     private final String paramName;
     private final StructType paramType;
 
     private final ConcurrentLinkedQueue<Message> queue = new ConcurrentLinkedQueue<>();
+    private final Thread worker;
 
     private volatile Status lastStatus;
     private volatile Instant lastReaded;
     private volatile Instant lastWrited;
 
-    private YqlWriter(String queryYql, String paramName, StructType paramType) {
+    private YqlWriter(YdbService ydb, String consumer, String queryYql, String paramName, StructType paramType) {
+        this.ydb = ydb;
         this.queryYql = queryYql;
         this.paramName = paramName;
         this.paramType = paramType;
         this.lastStatus = Status.SUCCESS;
         this.lastWrited = null;
         this.lastReaded = null;
+        this.worker = new Thread(new WriterRunnable(), "writer[" + consumer + "]");
     }
 
     public Status getLastStatus() {
@@ -58,8 +70,18 @@ public class YqlWriter implements AutoCloseable {
         return lastReaded;
     }
 
+    public void start() {
+        this.worker.start();
+    }
+
     @Override
     public void close() {
+        try {
+            worker.interrupt();
+            worker.join();
+        } catch (InterruptedException ex) {
+            logger.error("unexpected interrupt", ex);
+        }
     }
 
     public ReadEventHandlersSettings toHanlderSettings() {
@@ -76,6 +98,76 @@ public class YqlWriter implements AutoCloseable {
                 lastReaded = msg.getWrittenAt();
             }
         }
+    }
+
+    private class WriterRunnable implements Runnable {
+
+        public Value<?> parseMsg(byte[] json) {
+            return PrimitiveValue.newText(String.valueOf(json));
+        }
+
+        @Override
+        @SuppressWarnings("SleepWhileInLoop")
+        public void run() {
+            try {
+                Random rnd = new Random();
+                long lastPrinted = System.currentTimeMillis();
+                long written = 0;
+
+                while (true) {
+                    long now = System.currentTimeMillis();
+                    if (now - lastPrinted > 1000) {
+                        long ms = now - lastPrinted;
+                        double avg = 1000.0d * written / ms;
+                        logger.debug("writed {} rows, {} rps", written, avg);
+                        written = 0;
+                        lastPrinted = now;
+                    }
+
+                    Message msg = queue.poll();
+                    if (msg == null) {
+                        Thread.sleep(1000);
+                        continue;
+                    }
+
+                    DeferredCommitter committer = DeferredCommitter.newInstance();
+                    List<Value<?>> values = new ArrayList<>();
+                    Instant last = msg.getCreatedAt();
+
+                    while (msg != null && values.size() < WRITE_BATCH_SIZE) {
+                        values.add(PrimitiveValue.newText(String.valueOf(msg.getData())));
+                        committer.add(msg);
+
+                        msg = queue.poll();
+                    }
+
+                    Params prm = Params.of(paramName, ListType.of(paramType).newValue(values));
+                    lastStatus = ydb.executeQuery(queryYql, prm);
+                    if (Thread.interrupted()) {
+                        return;
+                    }
+
+                    int retry = 0;
+                    while (!lastStatus.isSuccess()) {
+                        retry++;
+                        long delay = 25 << Math.max(retry, 8);
+                        delay = delay + rnd.nextLong(delay);
+                        logger.debug("got error {}, retry #{} in {} ms", lastStatus, retry, delay);
+                        Thread.sleep(delay);
+                        lastStatus = ydb.executeQuery(queryYql, prm);
+                        if (Thread.interrupted()) {
+                            return;
+                        }
+                    }
+
+                    committer.commit();
+                    lastWrited = last;
+                }
+            } catch (InterruptedException e) {
+                // stoppping
+            }
+        }
+
     }
 
     public static Result<YqlWriter> parse(YdbService ydb, String consumer, String queryYql) {
@@ -107,6 +199,6 @@ public class YqlWriter implements AutoCloseable {
             )));
         }
 
-        return Result.success(new YqlWriter(queryYql, paramName, (StructType) innerType));
+        return Result.success(new YqlWriter(ydb, consumer, queryYql, paramName, (StructType) innerType));
     }
 }
