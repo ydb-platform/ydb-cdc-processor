@@ -2,7 +2,15 @@ package tech.ydb.app;
 
 import java.util.UUID;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import tech.ydb.topic.read.AsyncReader;
+import tech.ydb.topic.read.Message;
+import tech.ydb.topic.read.events.AbstractReadEventHandler;
+import tech.ydb.topic.read.events.CommitOffsetAcknowledgementEvent;
+import tech.ydb.topic.read.events.DataReceivedEvent;
+import tech.ydb.topic.settings.ReadEventHandlersSettings;
 import tech.ydb.topic.settings.ReaderSettings;
 import tech.ydb.topic.settings.TopicReadSettings;
 
@@ -11,6 +19,8 @@ import tech.ydb.topic.settings.TopicReadSettings;
  * @author Aleksandr Gorshenin
  */
 public class CdcReader implements AutoCloseable {
+    private static final Logger logger = LoggerFactory.getLogger(CdcReader.class);
+
     private final String id;
     private final String consumer;
     private final String changefeed;
@@ -27,10 +37,15 @@ public class CdcReader implements AutoCloseable {
         ReaderSettings rs = ReaderSettings.newBuilder()
                 .setConsumerName(consumer)
                 .setMaxMemoryUsageBytes(40 * 1024 * 1024) // 40 Mb
-                .addTopic(TopicReadSettings.newBuilder().setPath(changefeed).build())
+                .addTopic(TopicReadSettings.newBuilder()
+                        .setPath(ydb.expandPath(changefeed))
+                        .build())
+                .build();
+        ReadEventHandlersSettings rehs = ReadEventHandlersSettings.newBuilder()
+                .setEventHandler(new CdcEventHandler())
                 .build();
 
-        this.reader = ydb.createReader(rs, writer.toHanlderSettings());
+        this.reader = ydb.createReader(rs, rehs);
     }
 
     public void start() {
@@ -58,5 +73,20 @@ public class CdcReader implements AutoCloseable {
 
     public YqlWriter getWriter() {
         return writer;
+    }
+
+    private class CdcEventHandler extends AbstractReadEventHandler {
+        @Override
+        public void onMessages(DataReceivedEvent event) {
+            for (Message msg: event.getMessages()) {
+                writer.addMessage(msg);
+            }
+        }
+
+        @Override
+        public void onCommitResponse(CommitOffsetAcknowledgementEvent event) {
+            logger.debug("committed offset {} in topic {}[partition {}]",
+                    event.getCommittedOffset(), changefeed, event.getPartitionSession().getPartitionId());
+        }
     }
 }

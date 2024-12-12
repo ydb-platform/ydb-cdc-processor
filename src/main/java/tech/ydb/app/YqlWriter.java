@@ -23,9 +23,6 @@ import tech.ydb.table.values.StructType;
 import tech.ydb.table.values.Type;
 import tech.ydb.topic.read.DeferredCommitter;
 import tech.ydb.topic.read.Message;
-import tech.ydb.topic.read.events.AbstractReadEventHandler;
-import tech.ydb.topic.read.events.DataReceivedEvent;
-import tech.ydb.topic.settings.ReadEventHandlersSettings;
 
 /**
  *
@@ -81,20 +78,9 @@ public class YqlWriter implements AutoCloseable {
         }
     }
 
-    public ReadEventHandlersSettings toHanlderSettings() {
-        return ReadEventHandlersSettings.newBuilder()
-                .setEventHandler(new CdcEventHandler())
-                .build();
-    }
-
-    private class CdcEventHandler extends AbstractReadEventHandler {
-        @Override
-        public void onMessages(DataReceivedEvent event) {
-            for (Message msg: event.getMessages()) {
-                queue.add(msg);
-                lastReaded = msg.getWrittenAt();
-            }
-        }
+    public void addMessage(Message msg) {
+        queue.add(msg);
+        lastReaded = msg.getWrittenAt();
     }
 
     private class WriterRunnable implements Runnable {
@@ -125,9 +111,15 @@ public class YqlWriter implements AutoCloseable {
                     DeferredCommitter committer = DeferredCommitter.newInstance();
                     Instant last = msg.getCreatedAt();
 
-                    while (msg != null && !parser.isFull()) {
+                    while (msg != null) {
+                        last = msg.getCreatedAt();
                         parser.addMessage(msg.getData());
                         committer.add(msg);
+
+                        if (parser.isFull()) {
+                            break;
+                        }
+
                         msg = queue.poll();
                     }
 

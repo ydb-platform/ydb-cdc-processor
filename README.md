@@ -117,5 +117,9 @@ UPSERT INTO mat_view2 SELECT * FROM AS_TABLE($rows);
 </config>
 ```
 
+And run application
+```
+java -jar ydb-cdc-view-0.9.0-SNAPSHOT.jar --ydb.connection.url=<connection-url>  <path-to-config.xml>
+```
 
 

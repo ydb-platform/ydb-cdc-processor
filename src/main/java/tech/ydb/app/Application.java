@@ -65,7 +65,7 @@ public class Application implements CommandLineRunner {
                             warnings.add("can't create reader " + cdc.getConsumer()
                                     + " with problem: " + writer.getStatus());
                         } else {
-                            readers.add(new CdcReader(ydb, writer.getValue(), cdc.getConsumer(), changefeed));
+                            readers.add(new CdcReader(ydb, writer.getValue(), cdc.getConsumer(), cdc.getChangefeed()));
                         }
                     }
                 } catch (RuntimeException ex) {
