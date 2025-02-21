@@ -48,6 +48,7 @@ public class YdbService {
     private final static String PARAM_PASSWORD = "password";
     private final static String PARAM_SA_KEY = "saKeyFile";
     private final static String PARAM_TOKEN_FILE = "tokenFile";
+    private final static String PARAM_CA_CERT = "caCertFile";
 
     private final GrpcTransport transport;
 
@@ -62,11 +63,19 @@ public class YdbService {
         String password = env.getProperty(PREFIX + PARAM_PASSWORD);
         String saKeyFile = env.getProperty(PREFIX + PARAM_SA_KEY, options.get(PARAM_SA_KEY.toLowerCase()));
         String tokenFile = env.getProperty(PREFIX + PARAM_TOKEN_FILE, options.get(PARAM_TOKEN_FILE.toLowerCase()));
+        String caCartFile = env.getProperty(PREFIX + PARAM_CA_CERT, options.get(PARAM_CA_CERT.toLowerCase()));
 
         logger.info("connect to YDB with url {}", url);
         GrpcTransportBuilder builder = GrpcTransport.forConnectionString(url)
                 .withInitMode(GrpcTransportBuilder.InitMode.ASYNC);
 
+        if (caCartFile != null && !caCartFile.isEmpty()) {
+            try {
+                builder = builder.withSecureConnection(Files.readAllBytes(Path.of(caCartFile)));
+            } catch (IOException ex) {
+                logger.error("cannot read file {}", caCartFile, ex);
+            }
+        }
         if (saKeyFile != null && !saKeyFile.isEmpty()) {
             builder = builder.withAuthProvider(CloudAuthHelper.getServiceAccountFileAuthProvider(saKeyFile));
         }
