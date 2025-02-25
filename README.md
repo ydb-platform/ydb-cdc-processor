@@ -76,7 +76,7 @@ Create config file with content
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <config>
-    <cdc changefeed="table_source/cdc_topic" consumer="v1_consumer">
+    <cdc changefeed="table_source/cdc_topic" consumer="v1_consumer" batchSize="10" >
 <![CDATA[
 DECLARE $rows AS List<Struct<
     event_time: Text,

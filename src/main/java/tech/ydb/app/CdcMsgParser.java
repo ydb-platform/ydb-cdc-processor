@@ -22,30 +22,6 @@ import tech.ydb.table.values.ListType;
 import tech.ydb.table.values.ListValue;
 import tech.ydb.table.values.OptionalType;
 import tech.ydb.table.values.PrimitiveType;
-import static tech.ydb.table.values.PrimitiveType.Bool;
-import static tech.ydb.table.values.PrimitiveType.Bytes;
-import static tech.ydb.table.values.PrimitiveType.Date;
-import static tech.ydb.table.values.PrimitiveType.Datetime;
-import static tech.ydb.table.values.PrimitiveType.DyNumber;
-import static tech.ydb.table.values.PrimitiveType.Float;
-import static tech.ydb.table.values.PrimitiveType.Int16;
-import static tech.ydb.table.values.PrimitiveType.Int32;
-import static tech.ydb.table.values.PrimitiveType.Int64;
-import static tech.ydb.table.values.PrimitiveType.Int8;
-import static tech.ydb.table.values.PrimitiveType.Interval;
-import static tech.ydb.table.values.PrimitiveType.Json;
-import static tech.ydb.table.values.PrimitiveType.JsonDocument;
-import static tech.ydb.table.values.PrimitiveType.Text;
-import static tech.ydb.table.values.PrimitiveType.Timestamp;
-import static tech.ydb.table.values.PrimitiveType.TzDate;
-import static tech.ydb.table.values.PrimitiveType.TzDatetime;
-import static tech.ydb.table.values.PrimitiveType.TzTimestamp;
-import static tech.ydb.table.values.PrimitiveType.Uint16;
-import static tech.ydb.table.values.PrimitiveType.Uint32;
-import static tech.ydb.table.values.PrimitiveType.Uint64;
-import static tech.ydb.table.values.PrimitiveType.Uint8;
-import static tech.ydb.table.values.PrimitiveType.Uuid;
-import static tech.ydb.table.values.PrimitiveType.Yson;
 import tech.ydb.table.values.PrimitiveValue;
 import tech.ydb.table.values.StructType;
 import tech.ydb.table.values.Type;
@@ -61,13 +37,15 @@ public class CdcMsgParser {
 
     private final ObjectMapper mapper = new ObjectMapper();
 
+    private final long maxBatchSize;
     private final String paramName;
     private final StructType structType;
     private final Map<String, Integer> keyColumns = new HashMap<>();
 
     private final List<Value<?>> batch = new ArrayList<>();
 
-    public CdcMsgParser(String paramName, StructType type, TableDescription desc) {
+    public CdcMsgParser(String paramName, StructType type, TableDescription desc, Long batchSize) {
+        this.maxBatchSize = (batchSize == null) ? WRITE_BATCH_SIZE : batchSize;
         this.paramName = paramName;
         this.structType = type;
 
@@ -77,7 +55,7 @@ public class CdcMsgParser {
     }
 
     public boolean isFull() {
-        return batch.size() >= WRITE_BATCH_SIZE;
+        return batch.size() >= maxBatchSize;
     }
 
     public boolean isEmpty() {

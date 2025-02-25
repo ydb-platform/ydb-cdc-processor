@@ -85,7 +85,7 @@ public class CdcReader implements AutoCloseable {
 
         @Override
         public void onCommitResponse(CommitOffsetAcknowledgementEvent event) {
-            logger.debug("committed offset {} in topic {}[partition {}]",
+            logger.trace("committed offset {} in topic {}[partition {}]",
                     event.getCommittedOffset(), changefeed, event.getPartitionSession().getPartitionId());
         }
     }

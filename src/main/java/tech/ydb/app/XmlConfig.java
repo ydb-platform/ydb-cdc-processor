@@ -28,6 +28,8 @@ public class XmlConfig {
         private String changefeed;
         @XmlAttribute(name = "consumer", required = true)
         private String consumer;
+        @XmlAttribute(name = "batchSize")
+        private Long batchSize;
 
         @XmlValue
         private String query;
@@ -38,6 +40,10 @@ public class XmlConfig {
 
         public String getConsumer() {
             return this.consumer;
+        }
+
+        public Long getBatchSize() {
+            return this.batchSize;
         }
 
         public String getQuery() {

@@ -137,8 +137,8 @@ public class YqlWriter implements AutoCloseable {
                         retry++;
                         long delay = 25 << Math.min(retry, 8);
                         delay = delay + rnd.nextLong(delay);
-                        logger.debug("got error {}", lastStatus);
-                        logger.debug("retry #{} in {} ms", retry, delay);
+                        logger.warn("got error {}", lastStatus);
+                        logger.warn("retry #{} in {} ms", retry, delay);
                         Thread.sleep(delay);
                         lastStatus = ydb.executeQuery(queryYql, prm);
                     }
@@ -158,7 +158,8 @@ public class YqlWriter implements AutoCloseable {
 
     }
 
-    public static Result<YqlWriter> parse(YdbService ydb, String changefeed, String consumer, String queryYql) {
+    public static Result<YqlWriter> parse(YdbService ydb, String changefeed,
+            String consumer, String yqlQuery, Long batchSize) {
         int index = changefeed.lastIndexOf("/");
         if (index <= 0) {
             return Result.fail(Status.of(StatusCode.CLIENT_INTERNAL_ERROR, Issue.of(
@@ -173,7 +174,7 @@ public class YqlWriter implements AutoCloseable {
         }
         TableDescription description = descRes.getValue();
 
-        Result<DataQuery> parsed = ydb.parseQuery(queryYql);
+        Result<DataQuery> parsed = ydb.parseQuery(yqlQuery);
         if (!parsed.isSuccess()) {
             logger.error("Can't parse query for consumer {}, got status {}", consumer, parsed.getStatus());
             return parsed.map(null);
@@ -225,7 +226,7 @@ public class YqlWriter implements AutoCloseable {
             }
         }
 
-        CdcMsgParser parser = new CdcMsgParser(paramName, structType, description);
-        return Result.success(new YqlWriter(ydb, parser, consumer, queryYql));
+        CdcMsgParser parser = new CdcMsgParser(paramName, structType, description, batchSize);
+        return Result.success(new YqlWriter(ydb, parser, consumer, yqlQuery));
     }
 }
