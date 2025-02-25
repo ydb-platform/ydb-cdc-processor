@@ -92,7 +92,9 @@ public class YdbService {
 
         this.transport = builder.build();
         this.tableClient = TableClient.newClient(transport).build();
-        this.topicClient = TopicClient.newClient(transport).build();
+        this.topicClient = TopicClient.newClient(transport)
+                .setCompressionExecutor(Runnable::run) // Prevent OOM
+                .build();
     }
 
     @PreDestroy
