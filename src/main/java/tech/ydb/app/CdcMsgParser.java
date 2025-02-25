@@ -77,7 +77,7 @@ public class CdcMsgParser {
 
     public void addMessage(byte[] json) throws IOException {
         JsonNode root = mapper.readTree(json);
-        if (!root.isObject() || !root.hasNonNull("update") || !root.hasNonNull("newImage") || !root.hasNonNull("key")) {
+        if (!root.isObject() || !root.hasNonNull("update") || !root.hasNonNull("key")) {
             logger.error("unsupported cdc message {}", new String(json));
             return;
         }
@@ -85,7 +85,12 @@ public class CdcMsgParser {
         JsonNode newImage = root.get("newImage");
         JsonNode key = root.get("key");
 
-        if (!newImage.isObject() || !key.isArray()) {
+        if (!key.isArray()) {
+            logger.error("unsupported cdc message {}", new String(json));
+            return;
+        }
+
+        if (newImage != null && !newImage.isObject()) {
             logger.error("unsupported cdc message {}", new String(json));
             return;
         }
@@ -98,7 +103,9 @@ public class CdcMsgParser {
                 Integer keyIndex = keyColumns.get(name);
                 members[idx] = readValue(key.get(keyIndex), type);
             } else {
-                members[idx] = readValue(newImage.get(name), type);
+                if (newImage != null) {
+                    members[idx] = readValue(newImage.get(name), type);
+                }
             }
         }
 
