@@ -29,7 +29,7 @@ public class XmlConfig {
         @XmlAttribute(name = "consumer", required = true)
         private String consumer;
         @XmlAttribute(name = "batchSize")
-        private Long batchSize;
+        private Integer batchSize;
 
         @XmlValue
         private String query;
@@ -42,7 +42,7 @@ public class XmlConfig {
             return this.consumer;
         }
 
-        public Long getBatchSize() {
+        public Integer getBatchSize() {
             return this.batchSize;
         }
 

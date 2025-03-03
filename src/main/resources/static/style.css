@@ -13,6 +13,7 @@ html {
 }
 
 #warnings {
+    float: left;
     font-size: 150%;
     color: red;
 }

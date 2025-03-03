@@ -36,7 +36,8 @@ public class CdcReader implements AutoCloseable {
 
         ReaderSettings rs = ReaderSettings.newBuilder()
                 .setConsumerName(consumer)
-                .setMaxMemoryUsageBytes(40 * 1024 * 1024) // 40 Mb
+                .setDecompressionExecutor(Runnable::run)   // Prevent OOM
+                .setMaxMemoryUsageBytes(200 * 1024 * 1024) // 200 Mb
                 .addTopic(TopicReadSettings.newBuilder()
                         .setPath(ydb.expandPath(changefeed))
                         .build())

@@ -81,7 +81,7 @@ public class YdbService {
         }
         if (tokenFile != null && !tokenFile.isEmpty()) {
             try {
-                builder = builder.withAuthProvider(new TokenAuthProvider(Files.readString(Path.of(tokenFile))));
+                builder = builder.withAuthProvider(new TokenAuthProvider(Files.lines(Path.of(tokenFile)).findFirst().get()));
             } catch (IOException ex) {
                 logger.error("cannot read file {}", tokenFile, ex);
             }

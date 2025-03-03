@@ -5,7 +5,9 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,26 +31,28 @@ import tech.ydb.topic.read.Message;
  * @author Aleksandr Gorshenin
  */
 public class YqlWriter implements AutoCloseable {
+    public static final int DEFAULT_BATCH_SIZE = 1000;
     private static final Logger logger = LoggerFactory.getLogger(YqlWriter.class);
 
     private final YdbService ydb;
     private final CdcMsgParser parser;
     private final String queryYql;
 
-    private final ConcurrentLinkedQueue<Message> queue = new ConcurrentLinkedQueue<>();
+    private final BlockingQueue<Message> queue;
     private final Thread worker;
 
     private volatile Status lastStatus;
     private volatile Instant lastReaded;
     private volatile Instant lastWrited;
 
-    private YqlWriter(YdbService ydb, CdcMsgParser parser, String consumer, String queryYql) {
+    private YqlWriter(YdbService ydb, CdcMsgParser parser, String consumer, String queryYql, int batchSize) {
         this.ydb = ydb;
         this.queryYql = queryYql;
         this.parser = parser;
         this.lastStatus = Status.SUCCESS;
         this.lastWrited = null;
         this.lastReaded = null;
+        this.queue = new ArrayBlockingQueue<>(batchSize * 5);
         this.worker = new Thread(new WriterRunnable(), "writer[" + consumer + "]");
     }
 
@@ -79,8 +83,17 @@ public class YqlWriter implements AutoCloseable {
     }
 
     public void addMessage(Message msg) {
-        queue.add(msg);
-        lastReaded = msg.getWrittenAt();
+        try {
+            while (!queue.offer(msg, 5, TimeUnit.SECONDS)) {
+                if (!worker.isAlive() || worker.isInterrupted()) {
+                    return;
+                }
+            }
+            lastReaded = msg.getWrittenAt();
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            logger.warn("worker thread was interrupted");
+        }
     }
 
     private class WriterRunnable implements Runnable {
@@ -159,7 +172,7 @@ public class YqlWriter implements AutoCloseable {
     }
 
     public static Result<YqlWriter> parse(YdbService ydb, String changefeed,
-            String consumer, String yqlQuery, Long batchSize) {
+            String consumer, String yqlQuery, int batchSize) {
         int index = changefeed.lastIndexOf("/");
         if (index <= 0) {
             return Result.fail(Status.of(StatusCode.CLIENT_INTERNAL_ERROR, Issue.of(
@@ -227,6 +240,6 @@ public class YqlWriter implements AutoCloseable {
         }
 
         CdcMsgParser parser = new CdcMsgParser(paramName, structType, description, batchSize);
-        return Result.success(new YqlWriter(ydb, parser, consumer, yqlQuery));
+        return Result.success(new YqlWriter(ydb, parser, consumer, yqlQuery, batchSize));
     }
 }

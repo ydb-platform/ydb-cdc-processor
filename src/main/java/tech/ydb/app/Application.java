@@ -60,7 +60,10 @@ public class Application implements CommandLineRunner {
                         String changefeed = ydb.expandPath(cdc.getChangefeed());
                         String consumer = cdc.getConsumer();
                         String yqlQuery = cdc.getQuery();
-                        Long batchSize = cdc.getBatchSize();
+                        Integer batchSize = cdc.getBatchSize();
+                        if (batchSize == null) {
+                            batchSize = YqlWriter.DEFAULT_BATCH_SIZE;
+                        }
                         Result<YqlWriter> writer = YqlWriter.parse(ydb, changefeed, consumer, yqlQuery, batchSize);
                         if (!writer.isSuccess()) {
                             logger.error("can't create reader {} with problem {}",

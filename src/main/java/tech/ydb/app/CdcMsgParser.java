@@ -32,20 +32,19 @@ import tech.ydb.table.values.Value;
  * @author Aleksandr Gorshenin
  */
 public class CdcMsgParser {
-    private static final int WRITE_BATCH_SIZE = 1000;
     private static final Logger logger = LoggerFactory.getLogger(YqlWriter.class);
 
     private final ObjectMapper mapper = new ObjectMapper();
 
-    private final long maxBatchSize;
+    private final long batchSize;
     private final String paramName;
     private final StructType structType;
     private final Map<String, Integer> keyColumns = new HashMap<>();
 
     private final List<Value<?>> batch = new ArrayList<>();
 
-    public CdcMsgParser(String paramName, StructType type, TableDescription desc, Long batchSize) {
-        this.maxBatchSize = (batchSize == null) ? WRITE_BATCH_SIZE : batchSize;
+    public CdcMsgParser(String paramName, StructType type, TableDescription desc, long batchSize) {
+        this.batchSize = batchSize;
         this.paramName = paramName;
         this.structType = type;
 
@@ -55,7 +54,7 @@ public class CdcMsgParser {
     }
 
     public boolean isFull() {
-        return batch.size() >= maxBatchSize;
+        return batch.size() >= batchSize;
     }
 
     public boolean isEmpty() {
