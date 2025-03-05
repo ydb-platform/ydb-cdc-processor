@@ -57,14 +57,7 @@ public class Application implements CommandLineRunner {
                 try {
                     XmlConfig xml = JAXB.unmarshal(config, XmlConfig.class);
                     for (XmlConfig.Cdc cdc: xml.getCdcs()) {
-                        String changefeed = ydb.expandPath(cdc.getChangefeed());
-                        String consumer = cdc.getConsumer();
-                        String yqlQuery = cdc.getQuery();
-                        Integer batchSize = cdc.getBatchSize();
-                        if (batchSize == null) {
-                            batchSize = YqlWriter.DEFAULT_BATCH_SIZE;
-                        }
-                        Result<YqlWriter> writer = YqlWriter.parse(ydb, changefeed, consumer, yqlQuery, batchSize);
+                        Result<YqlWriter> writer = YqlWriter.parse(ydb, cdc);
                         if (!writer.isSuccess()) {
                             logger.error("can't create reader {} with problem {}",
                                     cdc.getConsumer(), writer.getStatus());

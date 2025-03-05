@@ -80,7 +80,7 @@ public class CdcReader implements AutoCloseable {
         @Override
         public void onMessages(DataReceivedEvent event) {
             for (Message msg: event.getMessages()) {
-                writer.addMessage(msg);
+                writer.addMessage(event.getPartitionSession().getPartitionId(), msg);
             }
         }
 
