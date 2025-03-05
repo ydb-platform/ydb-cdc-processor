@@ -41,7 +41,6 @@ public class YqlWriter implements AutoCloseable {
 
     private final List<Writer> writers;
 
-    private volatile Status lastStatus;
     private volatile Instant lastReaded;
     private volatile Instant lastWrited;
 
@@ -51,7 +50,6 @@ public class YqlWriter implements AutoCloseable {
     private YqlWriter(YdbService ydb, CdcConfig config, String prmName, StructType type, TableDescription description) {
         this.ydb = ydb;
         this.queryYql = config.getQuery();
-        this.lastStatus = Status.SUCCESS;
         this.lastWrited = null;
         this.lastReaded = null;
         this.writers = new ArrayList<>(config.getThreadsCount());
@@ -63,7 +61,13 @@ public class YqlWriter implements AutoCloseable {
     }
 
     public Status getLastStatus() {
-        return lastStatus;
+        for (int idx = 0; idx < writers.size(); idx++) {
+            Status last = writers.get(idx).lastStatus;
+            if (!last.isSuccess()) {
+                return last;
+            }
+        }
+        return Status.SUCCESS;
     }
 
     public Instant getLastWrited() {
@@ -101,6 +105,7 @@ public class YqlWriter implements AutoCloseable {
         private final BlockingQueue<Message> queue;
         private final CdcMsgParser parser;
         private final Thread thread;
+        private volatile Status lastStatus = Status.SUCCESS;
 
         public Writer(int batchSize, String threadName, String prmName, StructType type, TableDescription description) {
             this.queue = new ArrayBlockingQueue<>(2 * batchSize);
@@ -144,12 +149,6 @@ public class YqlWriter implements AutoCloseable {
                 Random rnd = new Random();
 
                 while (!Thread.interrupted()) {
-                    Message msg = queue.poll();
-                    if (msg == null) {
-                        Thread.sleep(1000);
-                        continue;
-                    }
-
                     long now = System.currentTimeMillis();
                     long printedAt = lastPrinted.get();
                     if ((now - printedAt > 1000) && lastPrinted.compareAndSet(printedAt, now)) {
@@ -157,6 +156,12 @@ public class YqlWriter implements AutoCloseable {
                         long written = writtenCount.getAndSet(0);
                         double avg = 1000.0d * written / ms;
                         logger.debug("writed {} rows, {} rps", written, String.format("%.2f", avg));
+                    }
+
+                    Message msg = queue.poll();
+                    if (msg == null) {
+                        Thread.sleep(1000);
+                        continue;
                     }
 
                     DeferredCommitter committer = DeferredCommitter.newInstance();
