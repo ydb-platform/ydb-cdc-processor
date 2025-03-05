@@ -186,14 +186,16 @@ public class YqlWriter implements AutoCloseable {
 
                     writtenCount.addAndGet(parser.batchSize());
                     Params prm = parser.build();
+                    now = System.currentTimeMillis();
                     lastStatus = ydb.executeQuery(queryYql, prm);
+                    long ms = System.currentTimeMillis() - now;
 
                     int retry = 0;
                     while (!lastStatus.isSuccess()) {
                         retry++;
                         long delay = 25 << Math.min(retry, 8);
                         delay = delay + rnd.nextLong(delay);
-                        logger.warn("got error {}", lastStatus);
+                        logger.warn("got error {} after {} ms", lastStatus, ms);
                         logger.warn("retry #{} in {} ms", retry, delay);
                         Thread.sleep(delay);
                         lastStatus = ydb.executeQuery(queryYql, prm);
