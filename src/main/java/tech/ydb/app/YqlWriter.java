@@ -116,7 +116,7 @@ public class YqlWriter implements AutoCloseable {
                     if (now - lastPrinted > 1000) {
                         long ms = now - lastPrinted;
                         double avg = 1000.0d * written / ms;
-                        logger.debug("writed {} rows, {} rps", written, avg);
+                        logger.debug("writed {} rows, {} rps", written, String.format("%.2f", avg));
                         written = 0;
                         lastPrinted = now;
                     }
