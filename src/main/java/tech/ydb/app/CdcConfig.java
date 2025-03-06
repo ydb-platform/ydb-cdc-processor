@@ -16,4 +16,6 @@ public interface CdcConfig {
     int getThreadsCount();
 
     int getTimeoutSeconds();
+
+    int getErrorThreshold();
 }

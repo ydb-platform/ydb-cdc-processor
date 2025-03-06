@@ -36,6 +36,8 @@ public class XmlConfig {
         private Integer threadsCount;
         @XmlAttribute(name = "timeoutSeconds")
         private Integer timeoutSeconds;
+        @XmlAttribute(name = "errorThreshold")
+        private Integer errorThreshold;
 
         @XmlValue
         private String query;
@@ -77,6 +79,14 @@ public class XmlConfig {
                 return 0;
             }
             return timeoutSeconds;
+        }
+
+        @Override
+        public int getErrorThreshold() {
+            if (errorThreshold == null) {
+                return 0;
+            }
+            return errorThreshold;
         }
     }
 }

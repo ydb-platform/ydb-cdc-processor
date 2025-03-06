@@ -39,6 +39,7 @@ public class YqlWriter implements AutoCloseable {
     private final YdbService ydb;
     private final String queryYql;
     private final int timeoutSeconds;
+    private final int errorThreshold;
 
     private final List<Writer> writers;
 
@@ -52,6 +53,7 @@ public class YqlWriter implements AutoCloseable {
         this.ydb = ydb;
         this.queryYql = config.getQuery();
         this.timeoutSeconds = config.getTimeoutSeconds();
+        this.errorThreshold = config.getErrorThreshold();
 
         this.lastWrited = null;
         this.lastReaded = null;
@@ -152,6 +154,12 @@ public class YqlWriter implements AutoCloseable {
                 Random rnd = new Random();
 
                 while (!Thread.interrupted()) {
+                    Message msg = queue.poll();
+                    if (msg == null) {
+                        Thread.sleep(1000);
+                        continue;
+                    }
+
                     long now = System.currentTimeMillis();
                     long printedAt = lastPrinted.get();
                     if ((now - printedAt > 1000) && lastPrinted.compareAndSet(printedAt, now)) {
@@ -159,12 +167,6 @@ public class YqlWriter implements AutoCloseable {
                         long written = writtenCount.getAndSet(0);
                         double avg = 1000.0d * written / ms;
                         logger.debug("writed {} rows, {} rps", written, String.format("%.2f", avg));
-                    }
-
-                    Message msg = queue.poll();
-                    if (msg == null) {
-                        Thread.sleep(1000);
-                        continue;
                     }
 
                     DeferredCommitter committer = DeferredCommitter.newInstance();
@@ -198,8 +200,14 @@ public class YqlWriter implements AutoCloseable {
                         retry++;
                         long delay = 25 << Math.min(retry, 8);
                         delay = delay + rnd.nextLong(delay);
-                        logger.warn("got error {} after {} ms", lastStatus, ms);
-                        logger.warn("retry #{} in {} ms", retry, delay);
+                        if (retry > errorThreshold) {
+                            logger.warn("got error {} after {} ms", lastStatus, ms);
+                            logger.warn("retry #{} in {} ms", retry, delay);
+                        } else {
+                            logger.trace("got error {} after {} ms", lastStatus, ms);
+                            logger.trace("retry #{} in {} ms", retry, delay);
+                        }
+
                         Thread.sleep(delay);
 
                         now = System.currentTimeMillis();
