@@ -28,6 +28,7 @@ import tech.ydb.table.TableClient;
 import tech.ydb.table.description.TableDescription;
 import tech.ydb.table.query.DataQuery;
 import tech.ydb.table.query.Params;
+import tech.ydb.table.settings.ExecuteDataQuerySettings;
 import tech.ydb.table.transaction.TxControl;
 import tech.ydb.topic.TopicClient;
 import tech.ydb.topic.read.AsyncReader;
@@ -143,14 +144,18 @@ public class YdbService {
         }
     }
 
-    public Status executeQuery(String query, Params params) {
+    public Status executeQuery(String query, Params params, int timeoutSeconds) {
         Result<Session> session = tableClient.createSession(Duration.ofSeconds(5)).join();
         if (!session.isSuccess()) {
             return session.getStatus();
         }
 
         try (Session s = session.getValue()) {
-            return s.executeDataQuery(query, TxControl.serializableRw(), params).join().getStatus();
+            ExecuteDataQuerySettings settings = new ExecuteDataQuerySettings();
+            if (timeoutSeconds > 0) {
+                settings.setTimeout(Duration.ofSeconds(timeoutSeconds));
+            }
+            return s.executeDataQuery(query, TxControl.serializableRw(), params, settings).join().getStatus();
         }
     }
 

@@ -38,6 +38,7 @@ public class YqlWriter implements AutoCloseable {
 
     private final YdbService ydb;
     private final String queryYql;
+    private final int timeoutSeconds;
 
     private final List<Writer> writers;
 
@@ -50,6 +51,8 @@ public class YqlWriter implements AutoCloseable {
     private YqlWriter(YdbService ydb, CdcConfig config, String prmName, StructType type, TableDescription description) {
         this.ydb = ydb;
         this.queryYql = config.getQuery();
+        this.timeoutSeconds = config.getTimeoutSeconds();
+
         this.lastWrited = null;
         this.lastReaded = null;
         this.writers = new ArrayList<>(config.getThreadsCount());
@@ -187,7 +190,7 @@ public class YqlWriter implements AutoCloseable {
                     writtenCount.addAndGet(parser.batchSize());
                     Params prm = parser.build();
                     now = System.currentTimeMillis();
-                    lastStatus = ydb.executeQuery(queryYql, prm);
+                    lastStatus = ydb.executeQuery(queryYql, prm, timeoutSeconds);
                     long ms = System.currentTimeMillis() - now;
 
                     int retry = 0;
@@ -198,7 +201,10 @@ public class YqlWriter implements AutoCloseable {
                         logger.warn("got error {} after {} ms", lastStatus, ms);
                         logger.warn("retry #{} in {} ms", retry, delay);
                         Thread.sleep(delay);
-                        lastStatus = ydb.executeQuery(queryYql, prm);
+
+                        now = System.currentTimeMillis();
+                        lastStatus = ydb.executeQuery(queryYql, prm, timeoutSeconds);
+                        ms = System.currentTimeMillis() - now;
                     }
 
                     parser.clear();

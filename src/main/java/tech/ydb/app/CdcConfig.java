@@ -14,4 +14,6 @@ public interface CdcConfig {
     int getBatchSize();
 
     int getThreadsCount();
+
+    int getTimeoutSeconds();
 }

@@ -34,6 +34,8 @@ public class XmlConfig {
         private Integer batchSize;
         @XmlAttribute(name = "threadsCount")
         private Integer threadsCount;
+        @XmlAttribute(name = "timeoutSeconds")
+        private Integer timeoutSeconds;
 
         @XmlValue
         private String query;
@@ -67,6 +69,14 @@ public class XmlConfig {
                 return DEFAULT_THREADS_COUNT;
             }
             return threadsCount;
+        }
+
+        @Override
+        public int getTimeoutSeconds() {
+            if (timeoutSeconds == null) {
+                return 0;
+            }
+            return timeoutSeconds;
         }
     }
 }
