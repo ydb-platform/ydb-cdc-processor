@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import jakarta.annotation.PreDestroy;
 import jakarta.xml.bind.JAXB;
@@ -84,7 +85,7 @@ public class Application implements CommandLineRunner {
         }
 
         for (XmlConfig.Cdc cdc: xml.getCdcs()) {
-            Result<CdcMsgParser> batcher = CdcMsgParser.parse(ydb, queries, cdc);
+            Result<Supplier<CdcMsgParser>> batcher = CdcMsgParser.parseConfig(ydb, queries, cdc);
             if (!batcher.isSuccess()) {
                 logger.error("can't create reader {} with problem {}", cdc.getConsumer(), batcher.getStatus());
                 warnings.add("can't create reader " + cdc.getConsumer() + " with problem: " + batcher.getStatus());

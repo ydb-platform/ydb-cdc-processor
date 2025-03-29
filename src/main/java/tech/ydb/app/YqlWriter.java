@@ -9,6 +9,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,7 +28,6 @@ public class YqlWriter implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(YqlWriter.class);
 
     private final YdbService ydb;
-    private final CdcMsgParser parser;
     private final int errorThreshold;
 
     private final List<Writer> writers;
@@ -38,9 +38,8 @@ public class YqlWriter implements AutoCloseable {
     private final AtomicLong lastPrinted = new AtomicLong();
     private final AtomicLong writtenCount = new AtomicLong();
 
-    public YqlWriter(YdbService ydb, CdcMsgParser parser, XmlConfig.Cdc config) {
+    public YqlWriter(YdbService ydb, Supplier<CdcMsgParser> parser, XmlConfig.Cdc config) {
         this.ydb = ydb;
-        this.parser = parser;
         this.errorThreshold = config.getErrorThreshold();
 
         this.lastWrited = null;
@@ -49,7 +48,7 @@ public class YqlWriter implements AutoCloseable {
 
         for (int idx = 1; idx <= config.getThreadsCount(); idx++) {
             String name = "writer-" + config.getConsumer() + "[" + idx + "]";
-            writers.add(new Writer(config.getBatchSize(), name));
+            writers.add(new Writer(parser.get(), config.getBatchSize(), name));
         }
     }
 
@@ -97,9 +96,11 @@ public class YqlWriter implements AutoCloseable {
     private class Writer implements Runnable {
         private final BlockingQueue<Message> queue;
         private final Thread thread;
+        private final CdcMsgParser parser;
         private volatile Status lastStatus = Status.SUCCESS;
 
-        public Writer(int batchSize, String threadName) {
+        public Writer(CdcMsgParser parser, int batchSize, String threadName) {
+            this.parser = parser;
             this.queue = new ArrayBlockingQueue<>(2 * batchSize);
             this.thread = new Thread(this, threadName);
         }
@@ -153,7 +154,9 @@ public class YqlWriter implements AutoCloseable {
                         long ms = now - printedAt;
                         long written = writtenCount.getAndSet(0);
                         double avg = 1000.0d * written / ms;
-                        logger.debug("writed {} rows, {} rps", written, String.format("%.2f", avg));
+                        String w = String.format("%7d", written);
+                        String a = String.format("%10.2f", avg);
+                        logger.debug("writed {} rows, {} rps", w, a);
                     }
 
                     DeferredCommitter committer = DeferredCommitter.newInstance();

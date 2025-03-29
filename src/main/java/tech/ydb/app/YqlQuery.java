@@ -9,6 +9,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
@@ -57,9 +58,7 @@ public abstract class YqlQuery {
                 Integer keyIndex = keyColumns.get(name);
                 members[idx] = readValue(key.get(keyIndex), type);
             } else {
-                if (update != null) {
-                    members[idx] = readValue(update.get(name), type);
-                }
+                members[idx] = readValue(update != null ? update.get(name) : null, type);
             }
         }
 
@@ -162,9 +161,9 @@ public abstract class YqlQuery {
         throw new IOException("Can't read node value " + node + " with type " + type);
     }
 
-    public static YqlQuery skipMessages(String type, String config, List<String> keys, XmlConfig.Cdc xml) {
+    public static Supplier<YqlQuery> skipMessages(String type, String config, List<String> keys, XmlConfig.Cdc xml) {
         final int batchSize = xml.getBatchSize();
-        return new YqlQuery(null, keys, batchSize) {
+        return () -> new YqlQuery(null, keys, batchSize) {
             @Override
             public void addMessage(JsonNode key, JsonNode update) throws IOException {
                 batch.add(NullValue.of());
@@ -178,10 +177,10 @@ public abstract class YqlQuery {
         };
     }
 
-    public static YqlQuery executeYql(String query, List<String> keys, String name, StructType type, XmlConfig.Cdc config) {
+    public static Supplier<YqlQuery> executeYql(String query, List<String> keys, String name, StructType type, XmlConfig.Cdc config) {
         final int batchSize = config.getBatchSize();
         final int timeout = config.getTimeoutSeconds();
-        return new YqlQuery(type, keys, batchSize) {
+        return () -> new YqlQuery(type, keys, batchSize) {
             @Override
             public Status execute(YdbService ydb) {
                 Params prm = Params.of(name, ListType.of(type).newValue(batch));

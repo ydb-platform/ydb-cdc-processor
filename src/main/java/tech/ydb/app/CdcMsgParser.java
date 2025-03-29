@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -35,9 +36,9 @@ public class CdcMsgParser {
     private final YqlQuery updateQuery;
     private final YqlQuery deleteQuery;
 
-    private CdcMsgParser(YqlQuery updateQuery, YqlQuery deleteQuery) {
-        this.updateQuery = updateQuery;
-        this.deleteQuery = deleteQuery;
+    private CdcMsgParser(Supplier<YqlQuery> updateQuery, Supplier<YqlQuery> deleteQuery) {
+        this.updateQuery = updateQuery.get();
+        this.deleteQuery = deleteQuery.get();
     }
 
     public YqlQuery parseJsonMessage(byte[] json) throws IOException {
@@ -80,7 +81,8 @@ public class CdcMsgParser {
         return null;
     }
 
-    public static Result<CdcMsgParser> parse(YdbService ydb, Map<String, XmlConfig.Query> queries, XmlConfig.Cdc cdc) {
+    public static Result<Supplier<CdcMsgParser>> parseConfig(YdbService ydb,
+            Map<String, XmlConfig.Query> queries, XmlConfig.Cdc cdc) {
         return new Parser(ydb, cdc, queries).parse();
     }
 
@@ -95,7 +97,7 @@ public class CdcMsgParser {
             this.xmlQueries = xmlQueries;
         }
 
-        public Result<CdcMsgParser> parse() {
+        public Result<Supplier<CdcMsgParser>> parse() {
             String changefeed = ydb.expandPath(cdc.getChangefeed());
 
             int index = changefeed.lastIndexOf("/");
@@ -112,20 +114,20 @@ public class CdcMsgParser {
             }
             TableDescription description = descRes.getValue();
 
-            Result<YqlQuery> updateQuery = findUpdateQuery(description);
+            Result<Supplier<YqlQuery>> updateQuery = findUpdateQuery(description);
             if (!updateQuery.isSuccess()) {
                 return updateQuery.map(null);
             }
 
-            Result<YqlQuery> deleteQuery = findDeleteQuery(description);
+            Result<Supplier<YqlQuery>> deleteQuery = findDeleteQuery(description);
             if (!deleteQuery.isSuccess()) {
                 return deleteQuery.map(null);
             }
 
-            return Result.success(new CdcMsgParser(updateQuery.getValue(), deleteQuery.getValue()));
+            return Result.success(() -> new CdcMsgParser(updateQuery.getValue(), deleteQuery.getValue()));
         }
 
-        private Result<YqlQuery> findUpdateQuery(TableDescription source) {
+        private Result<Supplier<YqlQuery>> findUpdateQuery(TableDescription source) {
             if (cdc.getQuery() != null && !cdc.getQuery().trim().isEmpty()) {
                 return validate(source, cdc.getQuery().trim(), false);
             }
@@ -140,7 +142,7 @@ public class CdcMsgParser {
             return Result.success(YqlQuery.skipMessages("update", "updateQueryId", source.getPrimaryKeys(), cdc));
         }
 
-        private Result<YqlQuery> findDeleteQuery(TableDescription source) {
+        private Result<Supplier<YqlQuery>> findDeleteQuery(TableDescription source) {
             String queryId = cdc.getDeleteQueryId();
             if (queryId != null && xmlQueries.containsKey(queryId)) {
                 XmlConfig.Query query = xmlQueries.get(queryId);
@@ -152,7 +154,7 @@ public class CdcMsgParser {
             return Result.success(YqlQuery.skipMessages("erase", "deleteQueryId",  source.getPrimaryKeys(), cdc));
         }
 
-        private Result<YqlQuery> validate(TableDescription source, String query, boolean keysOnly) {
+        private Result<Supplier<YqlQuery>> validate(TableDescription source, String query, boolean keysOnly) {
             Result<DataQuery> parsed = ydb.parseQuery(query);
             if (!parsed.isSuccess()) {
                 logger.error("Can't parse query for consumer {}, got status {}", cdc.getConsumer(), parsed.getStatus());
