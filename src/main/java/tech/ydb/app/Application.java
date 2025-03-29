@@ -2,7 +2,9 @@ package tech.ydb.app;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import jakarta.annotation.PreDestroy;
 import jakarta.xml.bind.JAXB;
@@ -55,18 +57,7 @@ public class Application implements CommandLineRunner {
                 warnings.add("Can't read file " + arg);
             } else {
                 try {
-                    XmlConfig xml = JAXB.unmarshal(config, XmlConfig.class);
-                    for (XmlConfig.Cdc cdc: xml.getCdcs()) {
-                        Result<YqlWriter> writer = YqlWriter.parse(ydb, cdc);
-                        if (!writer.isSuccess()) {
-                            logger.error("can't create reader {} with problem {}",
-                                    cdc.getConsumer(), writer.getStatus());
-                            warnings.add("can't create reader " + cdc.getConsumer()
-                                    + " with problem: " + writer.getStatus());
-                        } else {
-                            readers.add(new CdcReader(ydb, writer.getValue(), cdc.getConsumer(), cdc.getChangefeed()));
-                        }
-                    }
+                    loadXmlConfig(config.toURI().toASCIIString());
                 } catch (RuntimeException ex) {
                     logger.warn("can't parse file {}", arg, ex);
                     warnings.add("Parse exception: " + ex.getMessage());
@@ -83,6 +74,25 @@ public class Application implements CommandLineRunner {
         }
 
         logger.info("app has started");
+    }
+
+    private void loadXmlConfig(String content) {
+        XmlConfig xml = JAXB.unmarshal(content, XmlConfig.class);
+        Map<String, XmlConfig.Query> queries = new HashMap();
+        for (XmlConfig.Query query: xml.getQueries()) {
+            queries.put(query.getId(), query);
+        }
+
+        for (XmlConfig.Cdc cdc: xml.getCdcs()) {
+            Result<CdcMsgParser> batcher = CdcMsgParser.parse(ydb, queries, cdc);
+            if (!batcher.isSuccess()) {
+                logger.error("can't create reader {} with problem {}", cdc.getConsumer(), batcher.getStatus());
+                warnings.add("can't create reader " + cdc.getConsumer() + " with problem: " + batcher.getStatus());
+            } else {
+                YqlWriter writer = new YqlWriter(ydb, batcher.getValue(), cdc);
+                readers.add(new CdcReader(ydb, writer, cdc.getConsumer(), cdc.getChangefeed()));
+            }
+        }
     }
 
     @PreDestroy

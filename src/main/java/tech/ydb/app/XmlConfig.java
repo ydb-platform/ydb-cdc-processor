@@ -21,11 +21,48 @@ public class XmlConfig {
     @XmlElement(name = "cdc")
     private final List<Cdc> cdcs = new ArrayList<>();
 
+    @XmlElement(name = "query")
+    private final List<Query> queries = new ArrayList<>();
+
     public List<Cdc> getCdcs() {
         return this.cdcs;
     }
 
-    public static class Cdc implements CdcConfig {
+    public List<Query> getQueries() {
+        return this.queries;
+    }
+
+    public static class Query {
+        @XmlAttribute(name = "id", required = true)
+        private String id;
+
+//        @XmlAttribute(name = "upsertTo")
+//        private String upsertTo;
+//
+//        @XmlAttribute(name = "deleteFrom")
+//        private String deleteFrom;
+
+        @XmlValue
+        private String text;
+
+        public String getId() {
+            return this.id;
+        }
+
+        public String getText() {
+            return this.text;
+        }
+
+//        public String getUpsertTo() {
+//            return this.upsertTo;
+//        }
+//
+//        public String getDeleteFrom() {
+//            return this.deleteFrom;
+//        }
+    }
+
+    public static class Cdc {
         @XmlAttribute(name = "changefeed", required = true)
         private String changefeed;
         @XmlAttribute(name = "consumer", required = true)
@@ -39,25 +76,33 @@ public class XmlConfig {
         @XmlAttribute(name = "errorThreshold")
         private Integer errorThreshold;
 
+        @XmlAttribute(name = "updateQueryId")
+        private String updateQueryId;
+        @XmlAttribute(name = "deleteQueryId")
+        private String deleteQueryId;
         @XmlValue
         private String query;
 
-        @Override
         public String getChangefeed() {
             return this.changefeed;
         }
 
-        @Override
         public String getConsumer() {
             return this.consumer;
         }
 
-        @Override
+        public String getUpdateQueryId() {
+            return this.updateQueryId;
+        }
+
+        public String getDeleteQueryId() {
+            return this.deleteQueryId;
+        }
+
         public String getQuery() {
             return this.query;
         }
 
-        @Override
         public int getBatchSize() {
             if (batchSize == null) {
                 return DEFAULT_BATCH_SIZE;
@@ -65,7 +110,6 @@ public class XmlConfig {
             return batchSize;
         }
 
-        @Override
         public int getThreadsCount() {
             if (threadsCount == null) {
                 return DEFAULT_THREADS_COUNT;
@@ -73,7 +117,6 @@ public class XmlConfig {
             return threadsCount;
         }
 
-        @Override
         public int getTimeoutSeconds() {
             if (timeoutSeconds == null) {
                 return 0;
@@ -81,7 +124,6 @@ public class XmlConfig {
             return timeoutSeconds;
         }
 
-        @Override
         public int getErrorThreshold() {
             if (errorThreshold == null) {
                 return 0;

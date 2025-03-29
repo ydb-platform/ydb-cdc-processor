@@ -36,7 +36,7 @@ public class CdcReader implements AutoCloseable {
 
         ReaderSettings rs = ReaderSettings.newBuilder()
                 .setConsumerName(consumer)
-                .setDecompressionExecutor(Runnable::run)   // Prevent OOM
+                .setDecompressionExecutor(Runnable::run)   // CDC doesn't use compression, skip thread switching
                 .setMaxMemoryUsageBytes(200 * 1024 * 1024) // 200 Mb
                 .addTopic(TopicReadSettings.newBuilder()
                         .setPath(ydb.expandPath(changefeed))

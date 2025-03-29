@@ -1,191 +1,223 @@
 package tech.ydb.app;
 
 import java.io.IOException;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.Base64;
 import java.util.HashMap;
-import java.util.List;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import tech.ydb.core.Issue;
+import tech.ydb.core.Result;
+import tech.ydb.core.Status;
+import tech.ydb.core.StatusCode;
+import tech.ydb.table.description.TableColumn;
 import tech.ydb.table.description.TableDescription;
-import tech.ydb.table.query.Params;
-import tech.ydb.table.values.DecimalType;
+import tech.ydb.table.query.DataQuery;
 import tech.ydb.table.values.ListType;
-import tech.ydb.table.values.ListValue;
-import tech.ydb.table.values.OptionalType;
-import tech.ydb.table.values.PrimitiveType;
-import tech.ydb.table.values.PrimitiveValue;
 import tech.ydb.table.values.StructType;
 import tech.ydb.table.values.Type;
-import tech.ydb.table.values.Value;
+
 
 /**
  *
  * @author Aleksandr Gorshenin
  */
 public class CdcMsgParser {
-    private static final Logger logger = LoggerFactory.getLogger(YqlWriter.class);
+    private static final Logger logger = LoggerFactory.getLogger(YqlWriter.class); // use logger of YdlWriter
 
     private final ObjectMapper mapper = new ObjectMapper();
 
-    private final long batchSize;
-    private final String paramName;
-    private final StructType structType;
-    private final Map<String, Integer> keyColumns = new HashMap<>();
+    private final YqlQuery updateQuery;
+    private final YqlQuery deleteQuery;
 
-    private final List<Value<?>> batch = new ArrayList<>();
-
-    public CdcMsgParser(String paramName, StructType type, TableDescription desc, long batchSize) {
-        this.batchSize = batchSize;
-        this.paramName = paramName;
-        this.structType = type;
-
-        for (int keyIndex = 0; keyIndex < desc.getPrimaryKeys().size(); keyIndex += 1) {
-            keyColumns.put(desc.getPrimaryKeys().get(keyIndex), keyIndex);
-        }
+    private CdcMsgParser(YqlQuery updateQuery, YqlQuery deleteQuery) {
+        this.updateQuery = updateQuery;
+        this.deleteQuery = deleteQuery;
     }
 
-    public boolean isFull() {
-        return batch.size() >= batchSize;
-    }
-
-    public boolean isEmpty() {
-        return batch.isEmpty();
-    }
-
-    public int batchSize() {
-        return batch.size();
-    }
-
-    public void clear() {
-        batch.clear();
-    }
-
-    public Params build() {
-        ListValue value = ListType.of(structType).newValue(batch);
-        return Params.of(paramName, value);
-    }
-
-    public void addMessage(byte[] json) throws IOException {
+    public YqlQuery parseJsonMessage(byte[] json) throws IOException {
         JsonNode root = mapper.readTree(json);
-        if (!root.isObject() || !root.hasNonNull("update") || !root.hasNonNull("key")) {
+        if (!root.isObject() || !root.hasNonNull("key")) {
             logger.error("unsupported cdc message {}", new String(json));
-            return;
+            return null;
         }
 
-        JsonNode newImage = root.get("newImage");
         JsonNode key = root.get("key");
 
         if (!key.isArray()) {
             logger.error("unsupported cdc message {}", new String(json));
-            return;
+            return null;
         }
 
-        if (newImage != null && !newImage.isObject()) {
-            logger.error("unsupported cdc message {}", new String(json));
-            return;
+        if (root.hasNonNull("update") && updateQuery != null) {
+            JsonNode update = root.get("update");
+            if (update.isObject() && update.isObject() && !update.isEmpty()) {
+                updateQuery.addMessage(key, update);
+                return updateQuery;
+            }
+
+            JsonNode newImage = root.get("newImage");
+            if (newImage != null && newImage.isObject() && !newImage.isEmpty()) {
+                updateQuery.addMessage(key, newImage);
+                return updateQuery;
+            }
+
+            logger.error("unsupported update cdc message {}", new String(json));
+            return null;
         }
 
-        Value<?>[] members = new Value<?>[structType.getMembersCount()];
-        for (int idx = 0; idx < structType.getMembersCount(); idx += 1) {
-            String name = structType.getMemberName(idx);
-            Type type = structType.getMemberType(idx);
-            if (keyColumns.containsKey(name)) {
-                Integer keyIndex = keyColumns.get(name);
-                members[idx] = readValue(key.get(keyIndex), type);
-            } else {
-                if (newImage != null) {
-                    members[idx] = readValue(newImage.get(name), type);
+        if (root.hasNonNull("erase") && deleteQuery != null) {
+            deleteQuery.addMessage(key, null);
+            return deleteQuery;
+        }
+
+        logger.error("unsupported cdc message {}", new String(json));
+        return null;
+    }
+
+    public static Result<CdcMsgParser> parse(YdbService ydb, Map<String, XmlConfig.Query> queries, XmlConfig.Cdc cdc) {
+        return new Parser(ydb, cdc, queries).parse();
+    }
+
+    private static class Parser {
+        private final YdbService ydb;
+        private final XmlConfig.Cdc cdc;
+        private final Map<String, XmlConfig.Query> xmlQueries;
+
+        public Parser(YdbService ydb, XmlConfig.Cdc cdc, Map<String, XmlConfig.Query> xmlQueries) {
+            this.ydb = ydb;
+            this.cdc = cdc;
+            this.xmlQueries = xmlQueries;
+        }
+
+        public Result<CdcMsgParser> parse() {
+            String changefeed = ydb.expandPath(cdc.getChangefeed());
+
+            int index = changefeed.lastIndexOf("/");
+            if (index <= 0) {
+                return Result.fail(Status.of(StatusCode.CLIENT_INTERNAL_ERROR, Issue.of(
+                        "Changefeed name have to contain table name with  / " + changefeed, Issue.Severity.ERROR
+                )));
+            }
+
+            Result<TableDescription> descRes = ydb.describeTable(changefeed.substring(0, index));
+            if (!descRes.isSuccess()) {
+                logger.error("Can't describe table for changefeed {}, got status {}", changefeed, descRes.getStatus());
+                return descRes.map(null);
+            }
+            TableDescription description = descRes.getValue();
+
+            Result<YqlQuery> updateQuery = findUpdateQuery(description);
+            if (!updateQuery.isSuccess()) {
+                return updateQuery.map(null);
+            }
+
+            Result<YqlQuery> deleteQuery = findDeleteQuery(description);
+            if (!deleteQuery.isSuccess()) {
+                return deleteQuery.map(null);
+            }
+
+            return Result.success(new CdcMsgParser(updateQuery.getValue(), deleteQuery.getValue()));
+        }
+
+        private Result<YqlQuery> findUpdateQuery(TableDescription source) {
+            if (cdc.getQuery() != null && !cdc.getQuery().trim().isEmpty()) {
+                return validate(source, cdc.getQuery().trim(), false);
+            }
+            String queryId = cdc.getUpdateQueryId();
+            if (queryId != null && xmlQueries.containsKey(queryId)) {
+                XmlConfig.Query query = xmlQueries.get(queryId);
+                if (query.getText() != null && !query.getText().trim().isEmpty()) {
+                    return validate(source, query.getText().trim(), false);
                 }
             }
+
+            return Result.success(YqlQuery.skipMessages("update", "updateQueryId", source.getPrimaryKeys(), cdc));
         }
 
-        batch.add(structType.newValueUnsafe(members));
+        private Result<YqlQuery> findDeleteQuery(TableDescription source) {
+            String queryId = cdc.getDeleteQueryId();
+            if (queryId != null && xmlQueries.containsKey(queryId)) {
+                XmlConfig.Query query = xmlQueries.get(queryId);
+                if (query.getText() != null && !query.getText().trim().isEmpty()) {
+                    return validate(source, query.getText().trim(), true);
+                }
+            }
+
+            return Result.success(YqlQuery.skipMessages("erase", "deleteQueryId",  source.getPrimaryKeys(), cdc));
+        }
+
+        private Result<YqlQuery> validate(TableDescription source, String query, boolean keysOnly) {
+            Result<DataQuery> parsed = ydb.parseQuery(query);
+            if (!parsed.isSuccess()) {
+                logger.error("Can't parse query for consumer {}, got status {}", cdc.getConsumer(), parsed.getStatus());
+                return parsed.map(null);
+            }
+
+            Map<String, Type> types = parsed.getValue().types();
+            if (types.size() != 1) {
+                return Result.fail(Status.of(StatusCode.CLIENT_INTERNAL_ERROR, Issue.of(
+                        "Expected only one parameter, but got " + String.join(",", types.keySet()), Issue.Severity.ERROR
+                )));
+            }
+
+            String paramName = types.keySet().iterator().next();
+            Type listType = types.values().iterator().next();
+            if (listType.getKind() != Type.Kind.LIST) {
+                return Result.fail(Status.of(StatusCode.CLIENT_INTERNAL_ERROR, Issue.of(
+                        "Expected type List<Struct<...>>, but got " + listType, Issue.Severity.ERROR
+                )));
+            }
+
+            Type itemType = ((ListType) listType).getItemType();
+            if (itemType.getKind() != Type.Kind.STRUCT) {
+                return Result.fail(Status.of(StatusCode.CLIENT_INTERNAL_ERROR, Issue.of(
+                        "Expected type List<Struct<...>>, but got " + listType, Issue.Severity.ERROR
+                )));
+            }
+
+            StructType structType = (StructType) itemType;
+            Map<String, Type> tableTypes = new HashMap<>();
+            for (TableColumn column: source.getColumns()) {
+                tableTypes.put(column.getName(), column.getType());
+            }
+            Set<String> tableKeys = new HashSet();
+            for (String key: source.getPrimaryKeys()) {
+                tableKeys.add(key);
+            }
+
+            for (int idx = 0; idx < structType.getMembersCount(); idx += 1) {
+                String name = structType.getMemberName(idx);
+                Type type = structType.getMemberType(idx);
+                if (!tableTypes.containsKey(name)) {
+                    return Result.fail(Status.of(StatusCode.CLIENT_INTERNAL_ERROR, Issue.of(
+                            "Source table doesn't have column " + name, Issue.Severity.ERROR
+                    )));
+                }
+
+                if (!type.equals(tableTypes.get(name))) {
+                    return Result.fail(Status.of(StatusCode.CLIENT_INTERNAL_ERROR, Issue.of(
+                            "Source table column " + name + " has type " + tableTypes.get(name) + " instead of " + type,
+                            Issue.Severity.ERROR
+                    )));
+                }
+
+                if (keysOnly && !tableKeys.contains(name)) {
+                    return Result.fail(Status.of(StatusCode.CLIENT_INTERNAL_ERROR, Issue.of(
+                            "Source table column " + name + " is not primary key and cannot be used for delete actions",
+                            Issue.Severity.ERROR
+                    )));
+                }
+            }
+
+            return Result.success(YqlQuery.executeYql(query, source.getPrimaryKeys(), paramName, structType, cdc));
+        }
     }
 
-    private Value<?> readValue(JsonNode node, Type type) throws IOException {
-        if (type.getKind() == Type.Kind.OPTIONAL) {
-            OptionalType optional = (OptionalType) type;
-            if (node == null || node.isNull()) {
-                return optional.emptyValue();
-            } else {
-                return readValue(node, optional.getItemType()).makeOptional();
-            }
-        }
 
-        if (type.getKind() == Type.Kind.DECIMAL) {
-            DecimalType decimal = (DecimalType) type;
-            return decimal.newValue(node.asText());
-        }
-
-        if (type.getKind() == Type.Kind.PRIMITIVE) {
-            PrimitiveType primitive = (PrimitiveType) type;
-            switch (primitive) {
-                case Bool:
-                    return PrimitiveValue.newBool(node.asBoolean());
-
-                case Int8:
-                    return PrimitiveValue.newInt8((byte) node.asInt());
-                case Int16:
-                    return PrimitiveValue.newInt16((short) node.asInt());
-                case Int32:
-                    return PrimitiveValue.newInt32(node.asInt());
-                case Int64:
-                    return PrimitiveValue.newInt64(node.asLong());
-
-                case Uint8:
-                    return PrimitiveValue.newUint8(node.asInt());
-                case Uint16:
-                    return PrimitiveValue.newUint16(node.asInt());
-                case Uint32:
-                    return PrimitiveValue.newUint32(node.asLong());
-                case Uint64:
-                    return PrimitiveValue.newUint64(node.asLong());
-
-                case Float:
-                    return PrimitiveValue.newFloat(Double.valueOf(node.asDouble()).floatValue());
-                case Double:
-                    return PrimitiveValue.newDouble(node.asDouble());
-
-                case Text:
-                    return PrimitiveValue.newText(node.asText());
-                case Json:
-                    return PrimitiveValue.newJson(node.toString());
-                case Bytes:
-                    return PrimitiveValue.newBytes(Base64.getDecoder().decode(node.asText()));
-                case Yson:
-                    logger.warn("type YSON is not supported, ignored value {}", node.toString());
-                    return PrimitiveValue.newYson("{}".getBytes());
-                case JsonDocument:
-                    return PrimitiveValue.newJsonDocument(node.toString());
-                case Uuid:
-                    return PrimitiveValue.newUuid(node.asText());
-                case Date:
-                    return PrimitiveValue.newDate(Instant.parse(node.asText()).atOffset(ZoneOffset.UTC).toLocalDate());
-                case Datetime:
-                    return PrimitiveValue.newDatetime(Instant.parse(node.asText()).atOffset(ZoneOffset.UTC).toLocalDateTime());
-                case Timestamp:
-                    return PrimitiveValue.newTimestamp(Instant.parse(node.asText()));
-                case Interval:
-                    return PrimitiveValue.newInterval(Duration.ofSeconds(node.asLong()));
-                case TzDate:
-                case TzTimestamp:
-                case TzDatetime:
-                case DyNumber:
-                default:
-                    break;
-            }
-        }
-
-        logger.warn("unsupported type {}", type);
-        throw new IOException("Can't read node value " + node + " with type " + type);
-    }
 }
