@@ -171,7 +171,8 @@ public abstract class YqlQuery {
 
             @Override
             public Status execute(YdbService ydb) {
-                logger.info("skip {} {} messages because {} is not configured", batch.size(), type, config);
+                logger.info("skipped {} {} messages because {} is not configured for changefeed {}, consumer {}",
+                        batch.size(), type, config, xml.getChangefeed(), xml.getConsumer());
                 return Status.SUCCESS;
             }
         };

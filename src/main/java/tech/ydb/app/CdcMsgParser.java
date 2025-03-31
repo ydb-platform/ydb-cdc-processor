@@ -57,8 +57,8 @@ public class CdcMsgParser {
 
         if (root.hasNonNull("update") && updateQuery != null) {
             JsonNode update = root.get("update");
-            if (update.isObject() && update.isObject() && !update.isEmpty()) {
-                updateQuery.addMessage(key, update);
+            if (update.isObject() && update.isObject()) {
+                updateQuery.addMessage(key, update.isEmpty() ? null : update);
                 return updateQuery;
             }
 
