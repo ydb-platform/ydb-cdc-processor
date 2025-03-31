@@ -142,21 +142,22 @@ public class YqlWriter implements AutoCloseable {
                 YqlQuery query = null;
 
                 while (!Thread.interrupted()) {
-                    Message msg = queue.poll();
-                    if (msg == null) {
-                        Thread.sleep(1000);
-                        continue;
-                    }
-
                     long now = System.currentTimeMillis();
                     long printedAt = lastPrinted.get();
-                    if ((now - printedAt > 1000) && lastPrinted.compareAndSet(printedAt, now)) {
+                    if (printedAt > 0L && (now - printedAt > 1000L) 
+                            && lastPrinted.compareAndSet(printedAt, now)) {
                         long ms = now - printedAt;
                         long written = writtenCount.getAndSet(0);
                         double avg = 1000.0d * written / ms;
                         String w = String.format("%7d", written);
                         String a = String.format("%10.2f", avg);
-                        logger.debug("writed {} rows, {} rps", w, a);
+                        logger.debug("written {} rows, {} rps", w, a);
+                    }
+
+                    Message msg = queue.poll();
+                    if (msg == null) {
+                        Thread.sleep(1000L);
+                        continue;
                     }
 
                     DeferredCommitter committer = DeferredCommitter.newInstance();
