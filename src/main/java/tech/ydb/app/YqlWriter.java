@@ -142,16 +142,8 @@ public class YqlWriter implements AutoCloseable {
                 YqlQuery query = null;
 
                 while (!Thread.interrupted()) {
-                    long now = System.currentTimeMillis();
-                    long printedAt = lastPrinted.get();
-                    if (printedAt > 0L && (now - printedAt > 1000L) 
-                            && lastPrinted.compareAndSet(printedAt, now)) {
-                        long ms = now - printedAt;
-                        long written = writtenCount.getAndSet(0);
-                        double avg = 1000.0d * written / ms;
-                        String w = String.format("%7d", written);
-                        String a = String.format("%10.2f", avg);
-                        logger.debug("written {} rows, {} rps", w, a);
+                    if (logger.isDebugEnabled()) {
+                        printDebugStats();
                     }
 
                     Message msg = queue.poll();
@@ -193,6 +185,22 @@ public class YqlWriter implements AutoCloseable {
                         Issue.of(ex.getMessage(), Issue.Severity.ERROR));
             } catch (InterruptedException ex) {
                 // stoppping
+            }
+        }
+
+        private void printDebugStats() {
+            long now = System.currentTimeMillis();
+            long printedAt = lastPrinted.get();
+            if (printedAt > 0L && (now - printedAt > 1000L) 
+                    && lastPrinted.compareAndSet(printedAt, now)) {
+                long ms = now - printedAt;
+                long written = writtenCount.getAndSet(0);
+                if (written > 0L) {
+                    double avg = 1000.0d * written / ms;
+                    String w = String.format("%7d", written);
+                    String a = String.format("%10.2f", avg);
+                    logger.debug("written {} rows, {} rps", w, a);
+                }
             }
         }
 
