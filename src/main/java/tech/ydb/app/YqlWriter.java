@@ -8,6 +8,7 @@ import java.util.Random;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
@@ -26,8 +27,6 @@ import tech.ydb.topic.read.Message;
  */
 public class YqlWriter implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(YqlWriter.class);
-    private final Object lock = new Object();
-    private volatile boolean running = false;
 
     private final YdbService ydb;
     private final int errorThreshold;
@@ -39,6 +38,9 @@ public class YqlWriter implements AutoCloseable {
 
     private final AtomicLong lastPrinted = new AtomicLong();
     private final AtomicLong writtenCount = new AtomicLong();
+
+    private final AtomicBoolean isStarted = new AtomicBoolean(false);
+    private final AtomicBoolean isStoppped = new AtomicBoolean(false);
 
     public YqlWriter(YdbService ydb, Supplier<CdcMsgParser> parser, XmlConfig.Cdc config) {
         this.ydb = ydb;
@@ -73,12 +75,29 @@ public class YqlWriter implements AutoCloseable {
     }
 
     public void start() {
-        lastPrinted.set(System.currentTimeMillis());
-        writers.forEach(Writer::start);
+        if (isStoppped.get()) {
+            logger.error("writer is already stopped");
+            return;
+        }
+        if (isStarted.compareAndExchange(false, true)) {
+            lastPrinted.set(System.currentTimeMillis());
+            writers.forEach(Writer::start);
+        } else {
+            logger.warn("writer is already started");
+        }
     }
 
     @Override
     public void close() {
+        if (!isStoppped.compareAndExchange(false, true)) {
+            logger.error("writer is already stopped");
+            return;
+        }
+
+        if (!isStarted.get()) {
+            return;
+        }
+
         writers.forEach(Writer::stop);
 
         try {
@@ -108,21 +127,13 @@ public class YqlWriter implements AutoCloseable {
         }
 
         public void start() {
-            synchronized (lock) {
-                if (isRunning()) return;
-                thread.start();
-                running = true;
-                logger.info("writer {} started", thread.getName());
-            }
+            thread.start();
+            logger.info("writer {} started", thread.getName());
         }
 
         public void stop() {
-            synchronized (lock) {
-                if (!isRunning()) return;
-                running = false;
-                thread.interrupt();
-                logger.info("writer {} stopped", thread.getName());
-            }
+            thread.interrupt();
+            logger.info("writer {} stopped", thread.getName());
         }
 
         public void join() throws InterruptedException {
@@ -139,11 +150,8 @@ public class YqlWriter implements AutoCloseable {
                 }
                 lastReaded = msg.getWrittenAt();
             } catch (InterruptedException ex) {
-                synchronized (lock) {
-                    running = false;
-                    Thread.currentThread().interrupt();
-                    logger.warn("worker thread was interrupted");
-                }
+                Thread.currentThread().interrupt();
+                logger.warn("worker thread was interrupted");
             }
         }
 
@@ -197,16 +205,14 @@ public class YqlWriter implements AutoCloseable {
                 lastStatus = Status.of(StatusCode.CLIENT_INTERNAL_ERROR, ex,
                         Issue.of(ex.getMessage(), Issue.Severity.ERROR));
             } catch (InterruptedException ex) {
-                synchronized (lock) {
-                    running = false;
-                }
+                // stopping
             }
         }
 
         private void printDebugStats() {
             long now = System.currentTimeMillis();
             long printedAt = lastPrinted.get();
-            if (printedAt > 0L && (now - printedAt > 1000L) 
+            if (printedAt > 0L && (now - printedAt > 1000L)
                     && lastPrinted.compareAndSet(printedAt, now)) {
                 long ms = now - printedAt;
                 long written = writtenCount.getAndSet(0);
@@ -252,10 +258,6 @@ public class YqlWriter implements AutoCloseable {
 
             query.clear();
             lastWrited = lastMsgCreated;
-        }
-
-        private boolean isRunning() {
-            return running && thread.isAlive();
         }
     }
 }
