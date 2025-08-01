@@ -79,7 +79,8 @@ public class YqlWriter implements AutoCloseable {
             logger.error("writer is already stopped");
             return;
         }
-        if (isStarted.compareAndExchange(false, true)) {
+
+        if (isStarted.compareAndSet(false, true)) {
             lastPrinted.set(System.currentTimeMillis());
             writers.forEach(Writer::start);
         } else {
@@ -89,7 +90,7 @@ public class YqlWriter implements AutoCloseable {
 
     @Override
     public void close() {
-        if (!isStoppped.compareAndExchange(false, true)) {
+        if (!isStoppped.compareAndSet(false, true)) {
             logger.error("writer is already stopped");
             return;
         }
