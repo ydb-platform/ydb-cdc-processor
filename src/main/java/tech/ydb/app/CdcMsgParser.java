@@ -3,6 +3,7 @@ package tech.ydb.app;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -220,7 +221,25 @@ public class CdcMsgParser {
                 }
             }
 
-            return Result.success(YqlQuery.executeYql(queryText, source.getPrimaryKeys(), paramName, structType, cdc));
+            List<String> keys = source.getPrimaryKeys();
+            if (query.getUpsertTo() != null && !query.getUpsertTo().trim().isEmpty()) {
+                String execute = "UPSERT INTO `" + query.getUpsertTo().trim() + "` ";
+                return Result.success(YqlQuery.readAndExecuteYql(queryText, execute, keys, paramName, structType, cdc));
+            }
+            if (query.getDeleteFrom() != null && !query.getDeleteFrom().trim().isEmpty()) {
+                String execute = "DELETE FROM `" + query.getDeleteFrom().trim() + "` ON ";
+                return Result.success(YqlQuery.readAndExecuteYql(queryText, execute, keys, paramName, structType, cdc));
+            }
+            if (query.getUpdateOn() != null && !query.getUpdateOn().trim().isEmpty()) {
+                String execute = "UPDATE `" + query.getUpdateOn().trim() + "` ON ";
+                return Result.success(YqlQuery.readAndExecuteYql(queryText, execute, keys, paramName, structType, cdc));
+            }
+            if (query.getInsertTo() != null && !query.getInsertTo().trim().isEmpty()) {
+                String execute = "INSERT INTO `" + query.getInsertTo().trim() + "` ";
+                return Result.success(YqlQuery.readAndExecuteYql(queryText, execute, keys, paramName, structType, cdc));
+            }
+
+            return Result.success(YqlQuery.executeYql(queryText, keys, paramName, structType, cdc));
         }
     }
 

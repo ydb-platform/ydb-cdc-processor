@@ -42,6 +42,9 @@ public class XmlConfig {
         @XmlAttribute(name = "insertTo")
         private String insertTo;
 
+        @XmlAttribute(name = "updateOn")
+        private String updateOn;
+
         @XmlAttribute(name = "deleteFrom")
         private String deleteFrom;
 
@@ -79,6 +82,9 @@ public class XmlConfig {
             return this.deleteFrom;
         }
 
+        public String getUpdateOn() {
+            return this.updateOn;
+        }
 //        public int getBatchSize() {
 //            if (batchSize == null) {
 //                return DEFAULT_BATCH_SIZE;

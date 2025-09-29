@@ -25,8 +25,10 @@ import tech.ydb.core.auth.StaticCredentials;
 import tech.ydb.core.grpc.GrpcTransport;
 import tech.ydb.core.grpc.GrpcTransportBuilder;
 import tech.ydb.query.QuerySession;
+import tech.ydb.query.QueryStream;
 import tech.ydb.query.impl.QueryClientImpl;
 import tech.ydb.query.settings.ExecuteQuerySettings;
+import tech.ydb.query.tools.QueryReader;
 import tech.ydb.table.Session;
 import tech.ydb.table.TableClient;
 import tech.ydb.table.description.TableDescription;
@@ -167,6 +169,23 @@ public class YdbService {
                 settings.withRequestTimeout(Duration.ofSeconds(timeoutSeconds));
             }
             return s.createQuery(query, TxMode.NONE, params, settings.build()).execute().join().getStatus();
+        }
+    }
+
+    @SuppressWarnings("null")
+    public Result<QueryReader> readYqlQuery(String query, Params params, int timeoutSeconds) {
+        Result<QuerySession> session = queryClient.createSession(Duration.ofSeconds(5)).join();
+        if (!session.isSuccess()) {
+            return session.map(null);
+        }
+
+        try (QuerySession s = session.getValue()) {
+            ExecuteQuerySettings.Builder settings = ExecuteQuerySettings.newBuilder();
+            if (timeoutSeconds > 0) {
+                settings.withRequestTimeout(Duration.ofSeconds(timeoutSeconds));
+            }
+            QueryStream stream = s.createQuery(query, TxMode.SNAPSHOT_RO, params, settings.build());
+            return QueryReader.readFrom(stream).join();
         }
     }
 
