@@ -122,6 +122,7 @@ public class YdbService {
         return sb.toString();
     }
 
+    @SuppressWarnings("null")
     public Result<DataQuery> parseQuery(String query) {
         Result<Session> session = tableClient.createSession(Duration.ofSeconds(5)).join();
         if (!session.isSuccess()) {
@@ -133,6 +134,7 @@ public class YdbService {
         }
     }
 
+    @SuppressWarnings("null")
     public Result<TableDescription> describeTable(String tablePath) {
         Result<Session> session = tableClient.createSession(Duration.ofSeconds(5)).join();
         if (!session.isSuccess()) {
