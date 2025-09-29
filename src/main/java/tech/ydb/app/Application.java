@@ -74,7 +74,7 @@ public class Application implements CommandLineRunner {
         for (CdcReader reader: readers) {
             sessionPoolSize += reader.getWriter().getThreadsCount();
         }
-        ydb.updatePoolSize(Math.min(sessionPoolSize, 50));
+        ydb.updatePoolSize(Math.max(sessionPoolSize, 50));
 
         for (CdcReader reader: readers) {
             reader.start();

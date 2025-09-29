@@ -36,17 +36,11 @@ public class XmlConfig {
         @XmlAttribute(name = "id", required = true)
         private String id;
 
-        @XmlAttribute(name = "upsertTo")
-        private String upsertTo;
+        @XmlAttribute(name = "actionMode")
+        private String actionMode;
 
-        @XmlAttribute(name = "insertTo")
-        private String insertTo;
-
-        @XmlAttribute(name = "updateOn")
-        private String updateOn;
-
-        @XmlAttribute(name = "deleteFrom")
-        private String deleteFrom;
+        @XmlAttribute(name = "actionTable")
+        private String actionTable;
 
 //        @XmlAttribute(name = "batchSize")
 //        private Integer batchSize;
@@ -70,21 +64,14 @@ public class XmlConfig {
             return this.text;
         }
 
-        public String getUpsertTo() {
-            return this.upsertTo;
+        public String getActionMode() {
+            return this.actionMode;
         }
 
-        public String getInsertTo() {
-            return this.insertTo;
+        public String getActionTable() {
+            return this.actionTable;
         }
 
-        public String getDeleteFrom() {
-            return this.deleteFrom;
-        }
-
-        public String getUpdateOn() {
-            return this.updateOn;
-        }
 //        public int getBatchSize() {
 //            if (batchSize == null) {
 //                return DEFAULT_BATCH_SIZE;

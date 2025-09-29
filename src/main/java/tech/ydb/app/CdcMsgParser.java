@@ -158,8 +158,8 @@ public class CdcMsgParser {
 
         @SuppressWarnings("null")
         private Result<Supplier<YqlQuery>> validate(TableDescription source, XmlConfig.Query query, boolean keysOnly) {
-            String queryText = query.getText().trim();
-            Result<DataQuery> parsed = ydb.parseQuery(queryText);
+            String text = query.getText().trim();
+            Result<DataQuery> parsed = ydb.parseQuery(text);
             if (!parsed.isSuccess()) {
                 logger.error("Can't parse query for consumer {}, got status {}", cdc.getConsumer(), parsed.getStatus());
                 return parsed.map(null);
@@ -222,24 +222,33 @@ public class CdcMsgParser {
             }
 
             List<String> keys = source.getPrimaryKeys();
-            if (query.getUpsertTo() != null && !query.getUpsertTo().trim().isEmpty()) {
-                String execute = "UPSERT INTO `" + query.getUpsertTo().trim() + "` ";
-                return Result.success(YqlQuery.readAndExecuteYql(queryText, execute, keys, paramName, structType, cdc));
-            }
-            if (query.getDeleteFrom() != null && !query.getDeleteFrom().trim().isEmpty()) {
-                String execute = "DELETE FROM `" + query.getDeleteFrom().trim() + "` ON ";
-                return Result.success(YqlQuery.readAndExecuteYql(queryText, execute, keys, paramName, structType, cdc));
-            }
-            if (query.getUpdateOn() != null && !query.getUpdateOn().trim().isEmpty()) {
-                String execute = "UPDATE `" + query.getUpdateOn().trim() + "` ON ";
-                return Result.success(YqlQuery.readAndExecuteYql(queryText, execute, keys, paramName, structType, cdc));
-            }
-            if (query.getInsertTo() != null && !query.getInsertTo().trim().isEmpty()) {
-                String execute = "INSERT INTO `" + query.getInsertTo().trim() + "` ";
-                return Result.success(YqlQuery.readAndExecuteYql(queryText, execute, keys, paramName, structType, cdc));
+            if (query.getActionTable() != null && !query.getActionTable().trim().isEmpty()) {
+                String actionTable = query.getActionTable().trim();
+                String action = query.getActionMode();
+                if ("upsertInto".equalsIgnoreCase(action)) {
+                    String execute = "UPSERT INTO `" + actionTable + "` ";
+                    return Result.success(YqlQuery.readAndExecuteYql(text, execute, keys, paramName, structType, cdc));
+                }
+                if ("deleteFrom".equalsIgnoreCase(action)) {
+                    String execute = "DELETE FROM `" + actionTable + "` ON ";
+                    return Result.success(YqlQuery.readAndExecuteYql(text, execute, keys, paramName, structType, cdc));
+                }
+                if ("updateOn".equalsIgnoreCase(action)) {
+                    String execute = "UPDATE `" + actionTable + "` ON ";
+                    return Result.success(YqlQuery.readAndExecuteYql(text, execute, keys, paramName, structType, cdc));
+                }
+                if ("insertInto".equalsIgnoreCase(action)) {
+                    String execute = "INSERT INTO `" + actionTable + "` ";
+                    return Result.success(YqlQuery.readAndExecuteYql(text, execute, keys, paramName, structType, cdc));
+                }
+
+                return Result.fail(Status.of(StatusCode.CLIENT_INTERNAL_ERROR, Issue.of(
+                        "Uknown actionName " + action + ", expected upsertInto/deleteFrom/updateOn/insertInto",
+                        Issue.Severity.ERROR
+                )));
             }
 
-            return Result.success(YqlQuery.executeYql(queryText, keys, paramName, structType, cdc));
+            return Result.success(YqlQuery.executeYql(text, keys, paramName, structType, cdc));
         }
     }
 

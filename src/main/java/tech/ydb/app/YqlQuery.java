@@ -216,8 +216,8 @@ public abstract class YqlQuery {
 
                 StructType type = resultSetToType(rs);
                 Value<?> values = ListType.of(type).newValue(resultSetToValues(rs, type));
-                Params executePrms = Params.of("$input", values);
-                String executeQuery = "DECLARE $input AS " + type + "; " + query + " SELECT FROM AS_TABLE($input);";
+                Params executePrms = Params.of("$b", values);
+                String executeQuery = "DECLARE $b AS List<" + type + ">; " + query + " SELECT * FROM AS_TABLE($b);";
                 return ydb.executeYqlQuery(executeQuery, executePrms, timeout);
             }
         };
@@ -239,7 +239,7 @@ public abstract class YqlQuery {
         while (rs.next()) {
             Value<?>[] row = new Value[type.getMembersCount()];
             for (int idx = 0; idx < type.getMembersCount(); idx += 1) {
-                row[idx] = rs.getColumn(type.getMemberIndex(type.getMemberName(idx))).getValue();
+                row[idx] = rs.getColumn(type.getMemberName(idx)).getValue();
             }
             values.add(type.newValueUnsafe(row));
         }
