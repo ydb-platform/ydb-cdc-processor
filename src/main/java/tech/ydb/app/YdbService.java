@@ -18,18 +18,20 @@ import org.springframework.stereotype.Service;
 
 import tech.ydb.auth.TokenAuthProvider;
 import tech.ydb.auth.iam.CloudAuthHelper;
+import tech.ydb.common.transaction.TxMode;
 import tech.ydb.core.Result;
 import tech.ydb.core.Status;
 import tech.ydb.core.auth.StaticCredentials;
 import tech.ydb.core.grpc.GrpcTransport;
 import tech.ydb.core.grpc.GrpcTransportBuilder;
+import tech.ydb.query.QuerySession;
+import tech.ydb.query.impl.QueryClientImpl;
+import tech.ydb.query.settings.ExecuteQuerySettings;
 import tech.ydb.table.Session;
 import tech.ydb.table.TableClient;
 import tech.ydb.table.description.TableDescription;
 import tech.ydb.table.query.DataQuery;
 import tech.ydb.table.query.Params;
-import tech.ydb.table.settings.ExecuteDataQuerySettings;
-import tech.ydb.table.transaction.TxControl;
 import tech.ydb.topic.TopicClient;
 import tech.ydb.topic.read.AsyncReader;
 import tech.ydb.topic.settings.ReadEventHandlersSettings;
@@ -54,6 +56,7 @@ public class YdbService {
     private final GrpcTransport transport;
 
     private final TableClient tableClient;
+    private final QueryClientImpl queryClient;
     private final TopicClient topicClient;
 
     public YdbService(Environment env) {
@@ -93,9 +96,15 @@ public class YdbService {
 
         this.transport = builder.build();
         this.tableClient = TableClient.newClient(transport).build();
+        this.queryClient = QueryClientImpl.newClient(transport).build();
         this.topicClient = TopicClient.newClient(transport)
-                .setCompressionExecutor(Runnable::run) // Prevent OOM
+                .setCompressionExecutor(Runnable::run)
                 .build();
+    }
+
+    public void updatePoolSize(int maxSize) {
+        logger.error("set session pool max size {}", maxSize);
+        queryClient.updatePoolMaxSize(maxSize);
     }
 
     @PreDestroy
@@ -146,18 +155,18 @@ public class YdbService {
         }
     }
 
-    public Status executeQuery(String query, Params params, int timeoutSeconds) {
-        Result<Session> session = tableClient.createSession(Duration.ofSeconds(5)).join();
+    public Status executeYqlQuery(String query, Params params, int timeoutSeconds) {
+        Result<QuerySession> session = queryClient.createSession(Duration.ofSeconds(5)).join();
         if (!session.isSuccess()) {
             return session.getStatus();
         }
 
-        try (Session s = session.getValue()) {
-            ExecuteDataQuerySettings settings = new ExecuteDataQuerySettings();
+        try (QuerySession s = session.getValue()) {
+            ExecuteQuerySettings.Builder settings = ExecuteQuerySettings.newBuilder();
             if (timeoutSeconds > 0) {
-                settings.setTimeout(Duration.ofSeconds(timeoutSeconds));
+                settings.withRequestTimeout(Duration.ofSeconds(timeoutSeconds));
             }
-            return s.executeDataQuery(query, TxControl.serializableRw(), params, settings).join().getStatus();
+            return s.createQuery(query, TxMode.NONE, params, settings.build()).execute().join().getStatus();
         }
     }
 

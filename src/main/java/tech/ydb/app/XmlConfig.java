@@ -45,8 +45,8 @@ public class XmlConfig {
         @XmlAttribute(name = "deleteFrom")
         private String deleteFrom;
 
-        @XmlAttribute(name = "batchSize")
-        private Integer batchSize;
+//        @XmlAttribute(name = "batchSize")
+//        private Integer batchSize;
 
         @XmlValue
         private String text;
@@ -79,12 +79,12 @@ public class XmlConfig {
             return this.deleteFrom;
         }
 
-        public int getBatchSize() {
-            if (batchSize == null) {
-                return DEFAULT_BATCH_SIZE;
-            }
-            return batchSize;
-        }
+//        public int getBatchSize() {
+//            if (batchSize == null) {
+//                return DEFAULT_BATCH_SIZE;
+//            }
+//            return batchSize;
+//        }
     }
 
     public static class Cdc {

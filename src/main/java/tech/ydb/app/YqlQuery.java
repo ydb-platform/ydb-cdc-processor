@@ -185,7 +185,7 @@ public abstract class YqlQuery {
             @Override
             public Status execute(YdbService ydb) {
                 Params prm = Params.of(name, ListType.of(type).newValue(batch));
-                return ydb.executeQuery(query, prm, timeout);
+                return ydb.executeYqlQuery(query, prm, timeout);
             }
         };
     }
