@@ -70,6 +70,12 @@ public class Application implements CommandLineRunner {
             warnings.add("No reader configs found!!");
         }
 
+        int sessionPoolSize = 0;
+        for (CdcReader reader: readers) {
+            sessionPoolSize += reader.getWriter().getThreadsCount();
+        }
+        ydb.updatePoolSize(Math.max(sessionPoolSize, 50));
+
         for (CdcReader reader: readers) {
             reader.start();
         }

@@ -15,8 +15,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import tech.ydb.core.Result;
 import tech.ydb.core.Status;
+import tech.ydb.query.tools.QueryReader;
 import tech.ydb.table.query.Params;
+import tech.ydb.table.result.ResultSetReader;
 import tech.ydb.table.values.DecimalType;
 import tech.ydb.table.values.ListType;
 import tech.ydb.table.values.NullValue;
@@ -143,7 +146,8 @@ public abstract class YqlQuery {
                 case Date:
                     return PrimitiveValue.newDate(Instant.parse(node.asText()).atOffset(ZoneOffset.UTC).toLocalDate());
                 case Datetime:
-                    return PrimitiveValue.newDatetime(Instant.parse(node.asText()).atOffset(ZoneOffset.UTC).toLocalDateTime());
+                    return PrimitiveValue.newDatetime(Instant.parse(node.asText()).atOffset(ZoneOffset.UTC)
+                            .toLocalDateTime());
                 case Timestamp:
                     return PrimitiveValue.newTimestamp(Instant.parse(node.asText()));
                 case Interval:
@@ -178,15 +182,67 @@ public abstract class YqlQuery {
         };
     }
 
-    public static Supplier<YqlQuery> executeYql(String query, List<String> keys, String name, StructType type, XmlConfig.Cdc config) {
+    public static Supplier<YqlQuery> executeYql(String query, List<String> keys, String name, StructType type,
+            XmlConfig.Cdc config) {
         final int batchSize = config.getBatchSize();
         final int timeout = config.getTimeoutSeconds();
         return () -> new YqlQuery(type, keys, batchSize) {
             @Override
             public Status execute(YdbService ydb) {
                 Params prm = Params.of(name, ListType.of(type).newValue(batch));
-                return ydb.executeQuery(query, prm, timeout);
+                return ydb.executeYqlQuery(query, prm, timeout);
             }
         };
+    }
+
+    public static Supplier<YqlQuery> readAndExecuteYql(String selectQuery, String query, List<String> keys,
+            String name, StructType type, XmlConfig.Cdc config) {
+        final int batchSize = config.getBatchSize();
+        final int timeout = config.getTimeoutSeconds();
+        return () -> new YqlQuery(type, keys, batchSize) {
+            @Override
+            public Status execute(YdbService ydb) {
+                Params selectPrms = Params.of(name, ListType.of(type).newValue(batch));
+                Result<QueryReader> res = ydb.readYqlQuery(selectQuery, selectPrms, timeout);
+                if (!res.isSuccess()) {
+                    return res.getStatus();
+                }
+                QueryReader reader = res.getValue();
+                if (reader.getResultSetCount() < 1) {
+                    return Status.SUCCESS;
+                }
+
+                ResultSetReader rs = reader.getResultSet(0);
+
+                StructType type = resultSetToType(rs);
+                Value<?> values = ListType.of(type).newValue(resultSetToValues(rs, type));
+                Params executePrms = Params.of("$b", values);
+                String executeQuery = "DECLARE $b AS List<" + type + ">; " + query + " SELECT * FROM AS_TABLE($b);";
+                return ydb.executeYqlQuery(executeQuery, executePrms, timeout);
+            }
+        };
+    }
+
+    private static StructType resultSetToType(ResultSetReader rs) {
+        String[] names = new String[rs.getColumnCount()];
+        Type[] types = new Type[rs.getColumnCount()];
+        for (int idx = 0; idx < rs.getColumnCount(); idx += 1) {
+            names[idx] = rs.getColumnName(idx);
+            types[idx] = rs.getColumnType(idx);
+        }
+
+        return StructType.ofOwn(names, types);
+    }
+
+    private static List<Value<?>> resultSetToValues(ResultSetReader rs, StructType type) {
+        List<Value<?>> values = new ArrayList<>();
+        while (rs.next()) {
+            Value<?>[] row = new Value[type.getMembersCount()];
+            for (int idx = 0; idx < type.getMembersCount(); idx += 1) {
+                row[idx] = rs.getColumn(type.getMemberName(idx)).getValue();
+            }
+            values.add(type.newValueUnsafe(row));
+        }
+        return values;
     }
 }

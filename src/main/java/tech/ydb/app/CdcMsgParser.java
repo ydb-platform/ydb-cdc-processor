@@ -3,6 +3,7 @@ package tech.ydb.app;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -97,6 +98,7 @@ public class CdcMsgParser {
             this.xmlQueries = xmlQueries;
         }
 
+        @SuppressWarnings("null")
         public Result<Supplier<CdcMsgParser>> parse() {
             String changefeed = ydb.expandPath(cdc.getChangefeed());
 
@@ -129,13 +131,13 @@ public class CdcMsgParser {
 
         private Result<Supplier<YqlQuery>> findUpdateQuery(TableDescription source) {
             if (cdc.getQuery() != null && !cdc.getQuery().trim().isEmpty()) {
-                return validate(source, cdc.getQuery().trim(), false);
+                return validate(source, new XmlConfig.Query(cdc.getQuery().trim()), false);
             }
             String queryId = cdc.getUpdateQueryId();
             if (queryId != null && xmlQueries.containsKey(queryId)) {
                 XmlConfig.Query query = xmlQueries.get(queryId);
                 if (query.getText() != null && !query.getText().trim().isEmpty()) {
-                    return validate(source, query.getText().trim(), false);
+                    return validate(source, query, false);
                 }
             }
 
@@ -147,15 +149,17 @@ public class CdcMsgParser {
             if (queryId != null && xmlQueries.containsKey(queryId)) {
                 XmlConfig.Query query = xmlQueries.get(queryId);
                 if (query.getText() != null && !query.getText().trim().isEmpty()) {
-                    return validate(source, query.getText().trim(), true);
+                    return validate(source, query, true);
                 }
             }
 
             return Result.success(YqlQuery.skipMessages("erase", "deleteQueryId",  source.getPrimaryKeys(), cdc));
         }
 
-        private Result<Supplier<YqlQuery>> validate(TableDescription source, String query, boolean keysOnly) {
-            Result<DataQuery> parsed = ydb.parseQuery(query);
+        @SuppressWarnings("null")
+        private Result<Supplier<YqlQuery>> validate(TableDescription source, XmlConfig.Query query, boolean keysOnly) {
+            String text = query.getText().trim();
+            Result<DataQuery> parsed = ydb.parseQuery(text);
             if (!parsed.isSuccess()) {
                 logger.error("Can't parse query for consumer {}, got status {}", cdc.getConsumer(), parsed.getStatus());
                 return parsed.map(null);
@@ -217,7 +221,34 @@ public class CdcMsgParser {
                 }
             }
 
-            return Result.success(YqlQuery.executeYql(query, source.getPrimaryKeys(), paramName, structType, cdc));
+            List<String> keys = source.getPrimaryKeys();
+            if (query.getActionTable() != null && !query.getActionTable().trim().isEmpty()) {
+                String actionTable = query.getActionTable().trim();
+                String action = query.getActionMode();
+                if ("upsertInto".equalsIgnoreCase(action)) {
+                    String execute = "UPSERT INTO `" + actionTable + "` ";
+                    return Result.success(YqlQuery.readAndExecuteYql(text, execute, keys, paramName, structType, cdc));
+                }
+                if ("deleteFrom".equalsIgnoreCase(action)) {
+                    String execute = "DELETE FROM `" + actionTable + "` ON ";
+                    return Result.success(YqlQuery.readAndExecuteYql(text, execute, keys, paramName, structType, cdc));
+                }
+                if ("updateOn".equalsIgnoreCase(action)) {
+                    String execute = "UPDATE `" + actionTable + "` ON ";
+                    return Result.success(YqlQuery.readAndExecuteYql(text, execute, keys, paramName, structType, cdc));
+                }
+                if ("insertInto".equalsIgnoreCase(action)) {
+                    String execute = "INSERT INTO `" + actionTable + "` ";
+                    return Result.success(YqlQuery.readAndExecuteYql(text, execute, keys, paramName, structType, cdc));
+                }
+
+                return Result.fail(Status.of(StatusCode.CLIENT_INTERNAL_ERROR, Issue.of(
+                        "Uknown actionName " + action + ", expected upsertInto/deleteFrom/updateOn/insertInto",
+                        Issue.Severity.ERROR
+                )));
+            }
+
+            return Result.success(YqlQuery.executeYql(text, keys, paramName, structType, cdc));
         }
     }
 

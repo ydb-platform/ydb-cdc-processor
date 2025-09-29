@@ -56,6 +56,10 @@ public class YqlWriter implements AutoCloseable {
         }
     }
 
+    public int getThreadsCount() {
+        return writers.size();
+    }
+
     public Status getLastStatus() {
         for (int idx = 0; idx < writers.size(); idx++) {
             Status last = writers.get(idx).lastStatus;

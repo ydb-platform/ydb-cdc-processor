@@ -36,14 +36,25 @@ public class XmlConfig {
         @XmlAttribute(name = "id", required = true)
         private String id;
 
-//        @XmlAttribute(name = "upsertTo")
-//        private String upsertTo;
-//
-//        @XmlAttribute(name = "deleteFrom")
-//        private String deleteFrom;
+        @XmlAttribute(name = "actionMode")
+        private String actionMode;
+
+        @XmlAttribute(name = "actionTable")
+        private String actionTable;
+
+//        @XmlAttribute(name = "batchSize")
+//        private Integer batchSize;
 
         @XmlValue
         private String text;
+
+        public Query() {
+        }
+
+        public Query(String query) {
+            this.id = "inplacement";
+            this.text = query;
+        }
 
         public String getId() {
             return this.id;
@@ -53,12 +64,19 @@ public class XmlConfig {
             return this.text;
         }
 
-//        public String getUpsertTo() {
-//            return this.upsertTo;
-//        }
-//
-//        public String getDeleteFrom() {
-//            return this.deleteFrom;
+        public String getActionMode() {
+            return this.actionMode;
+        }
+
+        public String getActionTable() {
+            return this.actionTable;
+        }
+
+//        public int getBatchSize() {
+//            if (batchSize == null) {
+//                return DEFAULT_BATCH_SIZE;
+//            }
+//            return batchSize;
 //        }
     }
 
@@ -80,6 +98,7 @@ public class XmlConfig {
         private String updateQueryId;
         @XmlAttribute(name = "deleteQueryId")
         private String deleteQueryId;
+
         @XmlValue
         private String query;
 
