@@ -4,7 +4,7 @@
     <groupId>tech.ydb.apps</groupId>
     <artifactId>ydb-cdc-view</artifactId>
 
-    <version>0.9.1-SNAPSHOT</version>
+    <version>0.9.1</version>
 
     <name>YDB CDC Processor</name>
 
